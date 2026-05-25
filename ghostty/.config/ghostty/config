@@ -1,0 +1,5 @@
+theme = Catppuccin Mocha
+
+font-family = FiraMono Nerd Font Mono
+font-size = 18
+gtk-titlebar = true
