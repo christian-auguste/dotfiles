@@ -29,6 +29,6 @@ alias f='fd'
 # Core utilities
 # =========================================================
 
-alias grep='rg --color=auto'
+alias rg='rg --color=auto'
 alias diff='diff --color=auto'
 
