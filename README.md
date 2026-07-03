@@ -19,7 +19,7 @@ eval "$(/opt/homebrew/bin/brew shellenv)"
 ### 2. Install dependencies
 
 ```zsh
-brew install stow starship zoxide fzf fd eza bat ripgrep tmux
+brew install stow starship zoxide fzf fd eza bat ripgrep tmux herdr
 brew install --cask ghostty font-fira-mono-nerd-font
 ```
 
@@ -55,6 +55,7 @@ Open tmux and press `` ` `` then `I` to install plugins.
 | `tmux/` | Terminal multiplexer with Catppuccin theme |
 | `ghostty/` | Terminal emulator (Catppuccin Mocha, FiraMono Nerd Font) |
 | `starship/` | Cross-shell prompt |
+| `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
 
 ## Zsh plugins (auto-installed on first shell load)
 
@@ -67,6 +68,7 @@ Open tmux and press `` ` `` then `I` to install plugins.
 ```
 dotfiles/
 ├── ghostty/.config/ghostty/config
+├── herdr/.config/herdr/config.toml
 ├── starship/.config/starship.toml
 ├── tmux/
 │   ├── .tmux.conf
@@ -130,3 +132,7 @@ zplugin-update
 | `y` (copy mode) | Copy selection to clipboard |
 | Mouse drag | Highlight text (no auto-copy) |
 | Click (copy mode) | Clear selection |
+
+### Herdr (prefix: `` ` ``)
+
+herdr's prefix is set to a bare backtick to match tmux, so the leader key is consistent across both multiplexers. Default herdr keybindings apply after the prefix; only the prefix is customized. Reload config with `herdr server reload-config`.
