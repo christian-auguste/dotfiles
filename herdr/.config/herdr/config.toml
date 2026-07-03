@@ -1,5 +1,5 @@
 [theme]
-name = "terminal"
+name = "gruvbox-light"
 auto_switch = false
 
 [keys]
