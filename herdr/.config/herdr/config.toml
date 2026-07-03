@@ -1,0 +1,6 @@
+[theme]
+name = "terminal"
+auto_switch = false
+
+[keys]
+prefix = "backtick"
