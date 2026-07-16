@@ -1,0 +1,13 @@
+{
+  "mcpServers": {
+    "builder_mcp": {
+      "command": "builder-mcp",
+      "lifecycle": "keep-alive",
+      "env": {
+        "TOOL_PERSONALIZATION_ENABLED": "true",
+        "TOOL_PERSONALIZATION_ROLLOUT_PERCENTAGE": "100",
+        "TOOL_PERSONALIZATION_BYPASS_CLIENT_CHECK": "true"
+      }
+    }
+  }
+}

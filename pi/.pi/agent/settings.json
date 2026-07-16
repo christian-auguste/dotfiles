@@ -1,0 +1,26 @@
+{
+  "packages": [
+    "git:github.com/christian-auguste/pi-provider-kiro",
+    "npm:pi-mcp-adapter",
+    "npm:@samfp/pi-essentials",
+    "npm:pi-total-recall",
+    "npm:@aliou/pi-processes"
+  ],
+  "lastChangelogVersion": "0.80.6",
+  "theme": "gruvbox-light",
+  "defaultProvider": "kiro",
+  "defaultModel": "claude-sonnet-5",
+  "defaultThinkingLevel": "high",
+  "enabledModels": [
+    "kiro/claude-sonnet-5",
+    "kiro/claude-opus-4-8",
+    "kiro/claude-opus-4-6",
+    "kiro/claude-fable-5",
+    "kiro/agi-nova-beta-1m"
+  ],
+  "hideThinkingBlock": false,
+  "quietStartup": true,
+  "memory": {
+    "consolidationModel": "kiro/claude-sonnet-5"
+  }
+}

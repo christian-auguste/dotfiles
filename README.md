@@ -56,6 +56,7 @@ Open tmux and press `` ` `` then `I` to install plugins.
 | `ghostty/` | Terminal emulator (Catppuccin Mocha, FiraMono Nerd Font) |
 | `starship/` | Cross-shell prompt |
 | `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
+| `pi/` | Pi coding agent config (`settings.json`, `mcp.json`) -- excludes auth.json, caches, memory.db |
 
 ## Zsh plugins (auto-installed on first shell load)
 
