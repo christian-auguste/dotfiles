@@ -1,0 +1,15 @@
+{
+  "dirs": ["~/.meshclaw/workspace/.agents/scratchpad"],
+  "fileExtensions": [".md", ".txt"],
+  "excludeDirs": ["node_modules", ".git", "clones", "oss-clones", "nova-act-repos", "amzn-packages", "repo"],
+  "provider": {
+    "type": "ollama",
+    "url": "http://localhost:11434",
+    "model": "nomic-embed-text"
+  },
+  "overview": {
+    "maxDepth": 1,
+    "maxFoldersPerDir": 8,
+    "maxKeywordsPerFolder": 3
+  }
+}
