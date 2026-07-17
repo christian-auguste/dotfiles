@@ -1,3 +1,4 @@
+onboarding = false
 [theme]
 name = "gruvbox-light"
 auto_switch = false
