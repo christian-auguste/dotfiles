@@ -4,12 +4,13 @@
     "npm:pi-mcp-adapter",
     "npm:@samfp/pi-essentials",
     "npm:pi-total-recall",
-    "npm:@aliou/pi-processes"
+    "npm:@aliou/pi-processes",
+    "npm:pi-web-access"
   ],
-  "lastChangelogVersion": "0.80.6",
+  "lastChangelogVersion": "0.82.0",
   "theme": "gruvbox-light",
   "defaultProvider": "kiro",
-  "defaultModel": "claude-opus-4-8",
+  "defaultModel": "claude-opus-5",
   "defaultThinkingLevel": "high",
   "enabledModels": [
     "kiro/claude-sonnet-5",
