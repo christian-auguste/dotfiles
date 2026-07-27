@@ -56,7 +56,8 @@ Open tmux and press `` ` `` then `I` to install plugins.
 | `ghostty/` | Terminal emulator (Catppuccin Mocha, FiraMono Nerd Font) |
 | `starship/` | Cross-shell prompt |
 | `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
-| `pi/` | Pi coding agent config (`settings.json`, `mcp.json`) -- excludes auth.json, caches, memory.db |
+| `pi/` | Pi coding agent config (`settings.json`, `mcp.json`, extensions, theme) -- excludes auth.json, caches, sessions, memory, `npm/` |
+| `agents/` | Shared agent skills in `~/.agents/skills/` (tree-folded — new skills need no re-stow) |
 
 ## Zsh plugins (auto-installed on first shell load)
 
@@ -68,8 +69,16 @@ Open tmux and press `` ` `` then `I` to install plugins.
 
 ```
 dotfiles/
+├── agents/.agents/skills/       (one dir symlink — add skills freely)
 ├── ghostty/.config/ghostty/config
 ├── herdr/.config/herdr/config.toml
+├── pi/.pi/
+│   ├── knowledge-search.json
+│   └── agent/
+│       ├── settings.json     (packages, theme, models)
+│       ├── mcp.json
+│       ├── extensions/       (*.ts)
+│       └── themes/           (gruvbox-light.json)
 ├── starship/.config/starship.toml
 ├── tmux/
 │   ├── .tmux.conf
@@ -104,6 +113,8 @@ zplugin-update
 - On a managed work machine, add `source "$XDG_CONFIG_HOME/zsh/.zshrc"` at the end of `~/.zshrc` to load the modular config alongside tool-managed entries
 - Zoxide replaces `cd` via `--cmd cd` flag — smart matching with full `cd /exact/path` still working
 - `~/.zshenv` bootstraps XDG directories and sources `~/.config/zsh/.zshenv`
+- Employer-specific agent config (`~/.kiro/steering/`) is intentionally untracked — it documents internal build and deployment systems that don't belong in a personal repo, and wouldn't apply elsewhere. The pi steering extension no-ops when the directory is absent.
+- `~/.pi/agent/npm/package.json` is derived from `settings.json` by pi and is not tracked; `packages` in `settings.json` is the source of truth
 
 ## Keybindings
 
