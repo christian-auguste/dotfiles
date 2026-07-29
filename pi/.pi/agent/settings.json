@@ -15,9 +15,9 @@
   "enabledModels": [
     "kiro/claude-sonnet-5",
     "kiro/claude-opus-4-8",
-    "kiro/claude-opus-4-6",
     "kiro/claude-fable-5",
-    "kiro/agi-nova-beta-1m"
+    "kiro/gpt-5-6-sol",
+    "kiro/claude-opus-5"
   ],
   "hideThinkingBlock": false,
   "quietStartup": true,
