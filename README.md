@@ -118,7 +118,7 @@ zplugin-update
 
 ## Notes
 
-- On a managed work machine, add `source "$XDG_CONFIG_HOME/zsh/.zshrc"` at the end of `~/.zshrc` to load the modular config alongside tool-managed entries
+- `ZDOTDIR` is set to `$XDG_CONFIG_HOME/zsh` in `~/.zshenv`, so the interactive config (`$ZDOTDIR/.zshrc` — aliases, prompt, plugins) loads automatically; no manual source line is needed. Caveat: this makes zsh ignore `$HOME/.zshrc`, so on a managed machine that injects tool setup there, either leave `ZDOTDIR` unset or re-source those entries from `$ZDOTDIR/.zshrc`. Machine-local env (Homebrew path, per-host `PATH`) belongs in `~/.zshenv.local`, which the bootstrap sources if present
 - Zoxide replaces `cd` via `--cmd cd` flag — smart matching with full `cd /exact/path` still working
 - `~/.zshenv` bootstraps XDG directories and sources `~/.config/zsh/.zshenv`
 - Employer-specific agent config (`~/.kiro/steering/`) is intentionally untracked — it documents internal build and deployment systems that don't belong in a personal repo, and wouldn't apply elsewhere. The pi steering extension no-ops when the directory is absent.
