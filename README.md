@@ -9,43 +9,49 @@ Personal shell and terminal configuration managed with [GNU Stow](https://www.gn
 
 ## Install
 
-### 1. Install Homebrew (if not already installed)
-
-```zsh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-eval "$(/opt/homebrew/bin/brew shellenv)"
-```
-
-### 2. Install dependencies
-
-```zsh
-brew install stow starship zoxide fzf fd eza bat ripgrep tmux herdr
-brew install --cask ghostty font-fira-mono-nerd-font
-```
-
-### 3. Clone and stow
+macOS or Linux, one command:
 
 ```zsh
 git clone git@github.com:christian-auguste/dotfiles.git ~/dotfiles
-cd ~/dotfiles
-stow */
+~/dotfiles/install.sh
 ```
 
-### 4. Create required directories
+`install.sh` is idempotent (safe to re-run). It installs Homebrew if missing,
+runs `brew bundle` against the [Brewfile](./Brewfile), creates the XDG dirs the
+zsh config expects, `stow`s every package, and clones TPM. On Linux the macOS
+casks/fonts in the Brewfile are skipped automatically.
+
+Finish tmux setup: open tmux and press `` ` `` then `I` to install plugins.
+
+<details>
+<summary>Manual steps (what install.sh does)</summary>
 
 ```zsh
+# 1. Homebrew (if missing), then load it into the shell
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+eval "$(/opt/homebrew/bin/brew shellenv)"          # Linux: /home/linuxbrew/.linuxbrew/bin/brew
+
+# 2. Packages
+brew bundle --file=~/dotfiles/Brewfile
+
+# 3. Required directories
 mkdir -p ~/.local/state/zsh ~/.cache/zsh
-```
 
-### 5. Install tmux plugins
+# 4. Stow
+cd ~/dotfiles && stow */
 
-Clone TPM:
-
-```zsh
+# 5. tmux plugin manager
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 ```
+</details>
 
-Open tmux and press `` ` `` then `I` to install plugins.
+## Homebrew packages
+
+The intentional toolchain lives in the [Brewfile](./Brewfile) — the source of
+truth, replacing the old hand-maintained `brew install` line. Add a tool by
+editing the Brewfile, then run `brew bundle`. Transitive dependencies are **not**
+listed (Homebrew pulls those in on its own). To see what is installed but not
+recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
 
 ## Packages
 
@@ -53,7 +59,7 @@ Open tmux and press `` ` `` then `I` to install plugins.
 |---------|---|
 | `zsh/` | Shell environment, history, completion, plugins, aliases, keybindings |
 | `tmux/` | Terminal multiplexer with Catppuccin theme |
-| `ghostty/` | Terminal emulator (Catppuccin Mocha, FiraMono Nerd Font) |
+| `ghostty/` | Terminal emulator (Gruvbox Material Light, FiraMono Nerd Font) |
 | `starship/` | Cross-shell prompt |
 | `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
 | `pi/` | Pi coding agent config (`settings.json`, `mcp.json`, extensions, theme) -- excludes auth.json, caches, sessions, memory, `npm/` |
@@ -69,6 +75,8 @@ Open tmux and press `` ` `` then `I` to install plugins.
 
 ```
 dotfiles/
+├── Brewfile                     (intentional Homebrew packages — source of truth)
+├── install.sh                   (idempotent macOS/Linux setup)
 ├── agents/.agents/skills/       (one dir symlink — add skills freely)
 ├── ghostty/.config/ghostty/config
 ├── herdr/.config/herdr/config.toml
