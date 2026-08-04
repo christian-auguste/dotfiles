@@ -1,5 +1,10 @@
 theme = Gruvbox Material Light
-title = Ghostty
+
+# No `title =` set on purpose. A fixed `title` forces every window AND tab to
+# that string and makes Ghostty ignore the title escape sequences programs send.
+# Leaving it unset lets shell integration set each tab to its running process /
+# working directory. (macOS: the window title mirrors the focused tab — there is
+# no separate static window name.)
 
 font-family = FiraMono Nerd Font Mono
 font-size = 18
