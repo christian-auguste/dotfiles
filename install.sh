@@ -18,6 +18,13 @@ die()  { printf '  %s✗%s %s\n' "$R" "$X" "$*" >&2; exit 1; }
 
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# Homebrew keeps its tap-trust store at $XDG_CONFIG_HOME/homebrew/trust.json,
+# falling back to ~/.homebrew/trust.json when the var is unset. The zsh block in
+# step 7 exports XDG_CONFIG_HOME as ~/.config, so pin the same value here —
+# otherwise `brew trust` below writes to ~/.homebrew and the login shell, which
+# looks in ~/.config, never sees it.
+export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
 # --- coexist helpers ---------------------------------------------------------
 # Shared shell files (~/.zshenv, ~/.zshrc) are also written to by tools like
 # rustup, Homebrew, and nvm. We never replace them; we append one fenced block
@@ -107,7 +114,7 @@ for p in /opt/homebrew/bin/brew /usr/local/bin/brew /home/linuxbrew/.linuxbrew/b
 done
 command -v brew >/dev/null 2>&1 || die "brew not on PATH after install"
 
-# 2. Persist brew for future shells in ~/.zshenv.local (sourced by the block in step 6)
+# 2. Persist brew for future shells in ~/.zshenv.local (sourced by the block in step 7)
 step "Persisting Homebrew in ~/.zshenv.local"
 brew_line="eval \"\$($(command -v brew) shellenv)\""
 if grep -qsF "$brew_line" ~/.zshenv.local 2>/dev/null; then
@@ -116,16 +123,51 @@ else
   printf '\n%s\n' "$brew_line" >> ~/.zshenv.local && ok "added brew shellenv to ~/.zshenv.local"
 fi
 
-# 3. Packages (casks/fonts auto-skip on Linux via the Brewfile's OS.mac? guard)
+# 3. Preflight: the one decision Homebrew needs a human for.
+#    `brew bundle` SKIPS formulae from untrusted third-party taps rather than
+#    failing, so a missing tool otherwise shows up as a silent no-op minutes
+#    later. Ask brew which taps it is refusing and resolve it up front.
+step "Preflight: third-party tap trust"
+trust_cmds="$(brew bundle check --verbose --file="$DOTFILES/Brewfile" 2>&1 |
+  grep -o 'brew trust [^`]*' | sort -u)"
+if [ -z "$trust_cmds" ]; then
+  ok "all third-party taps trusted"
+else
+  warn "Homebrew is ignoring third-party taps in the Brewfile until they are trusted."
+  printf '    Trusting a tap lets its Ruby formula code run during brew operations,\n'
+  printf '    so it is a per-machine security decision and cannot live in the Brewfile.\n'
+  printf '    Leave them untrusted and their tools are skipped, not installed.\n'
+  printf '    Suggested by brew:\n'
+  while IFS= read -r c; do printf '      %s\n' "$c"; done <<<"$trust_cmds"
+  if [ ! -t 0 ]; then
+    warn "non-interactive — run the command(s) above, then re-run this script"
+  else
+    read -r -p "    Run them now? [y/N] " a
+    if [ "$a" = y ] || [ "$a" = Y ]; then
+      while IFS= read -r c; do
+        # Only ever run the narrow shape we asked grep for; brew's stdout is the
+        # source, but this stays a guard rather than trusting parsed text.
+        if [[ ! $c =~ ^brew\ trust\ (--formula\ |--cask\ |--tap\ )?[A-Za-z0-9/@._-]+$ ]]; then
+          warn "skipped unexpected command: $c"; continue
+        fi
+        if $c >/dev/null 2>&1; then ok "trusted ${c#brew trust }"; else warn "failed: $c"; fi
+      done <<<"$trust_cmds"
+    else
+      ok "skipped — tools from those taps will not be installed"
+    fi
+  fi
+fi
+
+# 4. Packages (casks/fonts auto-skip on Linux via the Brewfile's OS.mac? guard)
 step "Installing packages from Brewfile"
 if brew bundle --file="$DOTFILES/Brewfile"; then ok "Brewfile satisfied"
 else warn "Some Brewfile entries failed (internal-tap or unavailable formula). Continuing."; fi
 
-# 4. Directories the zsh config expects
+# 5. Directories the zsh config expects
 step "Creating XDG directories"
 mkdir -p ~/.local/state/zsh ~/.cache/zsh && ok "state + cache dirs ready" || warn "could not create XDG dirs"
 
-# 5. Stow the packages the dotfiles fully own (pure symlinks, no shared files).
+# 6. Stow the packages the dotfiles fully own (pure symlinks, no shared files).
 #    zsh ships only ~/.config/zsh/* (no top-level ~/.zshenv), so it is safe here.
 step "Stowing owned packages"
 cd "$DOTFILES"
@@ -141,7 +183,7 @@ else
   warn "stow not installed (Brewfile step failed?) — skipping symlinks"
 fi
 
-# 6. Coexist: layer our config onto the SHARED shell files without clobbering.
+# 7. Coexist: layer our config onto the SHARED shell files without clobbering.
 #    ~/.zshenv gets env + the source hooks; ~/.zshrc gets the interactive load.
 step "Wiring shell config (coexist)"
 append_block "$HOME/.zshenv" \
@@ -151,7 +193,7 @@ append_block "$HOME/.zshenv" \
 append_block "$HOME/.zshrc" \
 '[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc" ] && source "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc"'
 
-# 7. tmux plugin manager
+# 8. tmux plugin manager
 step "tmux plugin manager (TPM)"
 if [ -d ~/.tmux/plugins/tpm ]; then ok "TPM already present"
 elif git clone -q https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm; then ok "TPM cloned"
