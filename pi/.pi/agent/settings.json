@@ -10,8 +10,8 @@
   "lastChangelogVersion": "0.82.0",
   "theme": "gruvbox-light",
   "defaultProvider": "kiro",
-  "defaultModel": "claude-fable-5",
-  "defaultThinkingLevel": "medium",
+  "defaultModel": "claude-opus-5",
+  "defaultThinkingLevel": "high",
   "enabledModels": [
     "kiro/claude-sonnet-5",
     "kiro/claude-opus-4-8",
