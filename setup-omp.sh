@@ -69,9 +69,9 @@ cat <<'EOF'
      automatically, otherwise run /login kiro inside omp.
   2. Decide tools.approvalMode. It ships as `yolo` (auto-approves everything);
      `write` prompts on shell commands.
-  3. `cd ~/dotfiles && stow omp` -- carries models.yml and AGENTS.md, which omp
-     reads but never rewrites. config.yml is excluded on purpose: omp rewrites
-     it atomically and a rename would replace the symlink with a real file.
+  3. `cd ~/dotfiles && stow omp` -- carries AGENTS.md, which omp reads but never
+     rewrites. config.yml is excluded on purpose: omp rewrites it atomically and
+     a rename would replace the symlink with a real file.
   4. Pick a session model with Alt+P. Alt+M writes modelRoles into config.yml.
 EOF
 

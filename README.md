@@ -80,7 +80,7 @@ recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
 | `starship/` | Cross-shell prompt |
 | `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
 | `pi/` | Pi coding agent config (`settings.json`, `mcp.json`, extensions, theme) -- excludes auth.json, caches, sessions, memory, `npm/` |
-| `omp/` | Oh My Pi agent config (`models.yml`, `AGENTS.md`) -- excludes `config.yml`, which omp rewrites itself |
+| `omp/` | Oh My Pi agent config (`AGENTS.md`) -- excludes `config.yml`, which omp rewrites itself |
 | `agents/` | Shared agent skills in `~/.agents/skills/` (tree-folded — new skills need no re-stow) |
 
 ## Zsh plugins (auto-installed on first shell load)
@@ -107,7 +107,6 @@ dotfiles/
 │       ├── extensions/       (*.ts)
 │       └── themes/           (gruvbox-light.json)
 ├── omp/.omp/agent/
-│   ├── models.yml            (Kiro thinking-ladder bridge)
 │   └── AGENTS.md             (steering refs)
 ├── starship/.config/starship.toml
 ├── tmux/
@@ -143,7 +142,8 @@ zplugin-update
 - Zoxide replaces `cd` via `--cmd cd` flag — smart matching with full `cd /exact/path` still working
 - Employer-specific agent config (`~/.kiro/steering/`) is intentionally untracked — it documents internal build and deployment systems that don't belong in a personal repo, and wouldn't apply elsewhere. The pi steering extension no-ops when the directory is absent.
 - `~/.pi/agent/npm/package.json` is derived from `settings.json` by pi and is not tracked; `packages` in `settings.json` is the source of truth
-- **`~/.omp/agent/config.yml` is deliberately not stowed.** omp rewrites it atomically (temp file + rename), and a rename replaces a symlink with a real file — the dotfiles copy would silently go stale on the first write. omp also persists its own UI toggles there, so the file is genuinely dynamic. `setup-omp.sh` applies the handful of settings worth reproducing instead. `models.yml` and `AGENTS.md` *are* stowed: omp reads but never rewrites those.
+- **`~/.omp/agent/config.yml` is deliberately not stowed.** omp rewrites it atomically (temp file + rename), and a rename replaces a symlink with a real file — the dotfiles copy would silently go stale on the first write. omp also persists its own UI toggles there, so the file is genuinely dynamic. `setup-omp.sh` applies the handful of settings worth reproducing instead. `AGENTS.md` *is* stowed: omp reads but never rewrites it.
+- **`models.yml` cannot fix kiro's missing thinking ladder.** omp applies `modelOverrides` only to models its own registry produces (bundled catalog plus runtime discovery). Kiro models are registered by the plugin through `pi.registerProvider(...)`, a path the override merge never revisits — verified by overriding `name`, `contextWindow` and `thinking` on `kiro/claude-opus-5` and observing all three ignored, while the same overrides applied cleanly to `amazon-bedrock/anthropic.claude-opus-5`. The fix belongs in the provider plugin, which must publish `thinking` instead of the pi-era `thinkingLevelMap`.
 
 ## Keybindings
 
