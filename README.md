@@ -18,7 +18,8 @@ git clone git@github.com:christian-auguste/dotfiles.git ~/dotfiles
 
 `install.sh` is idempotent (safe to re-run). It installs Homebrew if missing,
 runs `brew bundle` against the [Brewfile](./Brewfile), creates the XDG dirs the
-zsh config expects, `stow`s every package, and clones TPM. On Linux the macOS
+zsh config expects, `stow`s the packages the dotfiles own, wires the shared
+shell files (see Notes → coexist), and clones TPM. On Linux the macOS
 casks/fonts in the Brewfile are skipped automatically.
 
 Finish tmux setup: open tmux and press `` ` `` then `I` to install plugins.
@@ -37,10 +38,14 @@ brew bundle --file=~/dotfiles/Brewfile
 # 3. Required directories
 mkdir -p ~/.local/state/zsh ~/.cache/zsh
 
-# 4. Stow
+# 4. Stow the packages the dotfiles own
 cd ~/dotfiles && stow */
 
-# 5. tmux plugin manager
+# 5. Wire the shared shell files (coexist — appends a fenced block, backs up first)
+printf '\n# >>> christian dotfiles >>>\nexport XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"\n[ -f "$XDG_CONFIG_HOME/zsh/.zshenv" ] && source "$XDG_CONFIG_HOME/zsh/.zshenv"\n[ -f "$HOME/.zshenv.local" ] && source "$HOME/.zshenv.local"\n# <<< christian dotfiles <<<\n' >> ~/.zshenv
+printf '\n# >>> christian dotfiles >>>\n[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc" ] && source "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc"\n# <<< christian dotfiles <<<\n' >> ~/.zshrc
+
+# 6. tmux plugin manager
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 ```
 </details>
@@ -92,8 +97,7 @@ dotfiles/
 │   ├── .tmux.conf
 │   └── .tmux/plugins/        (gitignored — managed by TPM)
 ├── zsh/
-│   ├── .zshenv               (bootstrap: XDG vars, sources config)
-│   └── .config/zsh/
+│   └── .config/zsh/          (stowed; the shared ~/.zshenv & ~/.zshrc get a fenced source block instead)
 │       ├── .zshenv           (env vars: editor, pager, paths)
 │       ├── .zshrc            (interactive: history, completion, plugins)
 │       ├── aliases.zsh
@@ -118,9 +122,8 @@ zplugin-update
 
 ## Notes
 
-- `ZDOTDIR` is set to `$XDG_CONFIG_HOME/zsh` in `~/.zshenv`, so the interactive config (`$ZDOTDIR/.zshrc` — aliases, prompt, plugins) loads automatically; no manual source line is needed. Caveat: this makes zsh ignore `$HOME/.zshrc`, so on a managed machine that injects tool setup there, either leave `ZDOTDIR` unset or re-source those entries from `$ZDOTDIR/.zshrc`. Machine-local env (Homebrew path, per-host `PATH`) belongs in `~/.zshenv.local`, which the bootstrap sources if present
+- **Coexist wiring for shared shell files.** `~/.zshenv` and `~/.zshrc` are also written to by tools (rustup, Homebrew, nvm, etc.), so the dotfiles do **not** stow or replace them. Instead `install.sh` appends one fenced block (`# >>> christian dotfiles >>> … # <<<`) that sets `XDG_CONFIG_HOME` and sources `~/.config/zsh/.zshenv` + `~/.config/zsh/.zshrc` (your real config, which *is* stowed). Re-running is a no-op once the block exists, and the script backs each file up to `<file>.dotfiles-bak` before its first change. Machine-local env (Homebrew path, per-host `PATH`) goes in `~/.zshenv.local`, sourced by the block. To uninstall: `stow -D`, then delete the fenced block (or restore the `.bak`) — tool lines are never touched.
 - Zoxide replaces `cd` via `--cmd cd` flag — smart matching with full `cd /exact/path` still working
-- `~/.zshenv` bootstraps XDG directories and sources `~/.config/zsh/.zshenv`
 - Employer-specific agent config (`~/.kiro/steering/`) is intentionally untracked — it documents internal build and deployment systems that don't belong in a personal repo, and wouldn't apply elsewhere. The pi steering extension no-ops when the directory is absent.
 - `~/.pi/agent/npm/package.json` is derived from `settings.json` by pi and is not tracked; `packages` in `settings.json` is the source of truth
 
