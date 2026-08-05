@@ -28,11 +28,17 @@ brew "can1357/tap/omp" # oh-my-pi coding agent
 brew "git-lfs"       # large-file versioning
 brew "pipx"          # isolated Python CLIs
 brew "ruby"          # scripting
-brew "rust-analyzer" # Rust LSP
 brew "graphviz"      # diagram rendering
 brew "tlrc"          # tldr client
 brew "ollama"        # local LLMs
 brew "unison"        # file synchronization
+
+# --- language servers (auto-detected by omp when a project root marker matches) ---
+brew "rust-analyzer" # Rust
+brew "basedpyright"  # Python types — pyright fork with the Pylance-only features
+brew "ruff"          # Python lint + format (replaces black/isort/flake8)
+brew "typescript-language-server" # TypeScript / JavaScript
+brew "vscode-langservers-extracted" # html, css, json, eslint servers
 
 # --- macOS GUI apps + fonts (skipped on Linux) ---
 if OS.mac?
