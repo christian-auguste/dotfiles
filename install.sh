@@ -199,6 +199,17 @@ if [ -d ~/.tmux/plugins/tpm ]; then ok "TPM already present"
 elif git clone -q https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm; then ok "TPM cloned"
 else warn "TPM clone failed"; fi
 
+# 9. Next steps this script deliberately does not run.
+#    setup-omp.sh needs omp installed AND launched once (the wizard writes
+#    config.yml first), so it cannot be chained safely from here.
+step "Next steps"
+printf '  %s-%s tmux: open it and press ` then I to install plugins\n' "$C" "$X"
+if command -v omp >/dev/null 2>&1; then
+  printf '  %s-%s omp: launch it once, then run ./setup-omp.sh\n' "$C" "$X"
+else
+  printf '  %s-%s omp: not installed — skip setup-omp.sh until it is\n' "$C" "$X"
+fi
+
 # Summary
 if [ "$WARN" -eq 0 ]; then
   printf '\n%s✓ Done — no warnings.%s Restart your shell (or run `exec zsh -l`).\n' "$G$B" "$X"

@@ -24,6 +24,18 @@ casks/fonts in the Brewfile are skipped automatically.
 
 Finish tmux setup: open tmux and press `` ` `` then `I` to install plugins.
 
+Configure omp separately, because it needs omp installed *and* launched once —
+the setup wizard writes `config.yml` before this script can edit it:
+
+```zsh
+omp                    # let the wizard run, then quit
+~/dotfiles/setup-omp.sh
+```
+
+`setup-omp.sh` is idempotent too. It sets only the settings that differ from
+omp's own defaults, installs the Kiro provider plugin, and never deletes keys —
+anything it does not mention resolves from omp's schema at read time.
+
 <details>
 <summary>Manual steps (what install.sh does)</summary>
 
@@ -68,6 +80,7 @@ recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
 | `starship/` | Cross-shell prompt |
 | `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
 | `pi/` | Pi coding agent config (`settings.json`, `mcp.json`, extensions, theme) -- excludes auth.json, caches, sessions, memory, `npm/` |
+| `omp/` | Oh My Pi agent config (`models.yml`, `AGENTS.md`) -- excludes `config.yml`, which omp rewrites itself |
 | `agents/` | Shared agent skills in `~/.agents/skills/` (tree-folded — new skills need no re-stow) |
 
 ## Zsh plugins (auto-installed on first shell load)
@@ -82,6 +95,7 @@ recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
 dotfiles/
 ├── Brewfile                     (intentional Homebrew packages — source of truth)
 ├── install.sh                   (idempotent macOS/Linux setup)
+├── setup-omp.sh                 (omp settings — run after launching omp once)
 ├── agents/.agents/skills/       (one dir symlink — add skills freely)
 ├── ghostty/.config/ghostty/config
 ├── herdr/.config/herdr/config.toml
@@ -92,6 +106,9 @@ dotfiles/
 │       ├── mcp.json
 │       ├── extensions/       (*.ts)
 │       └── themes/           (gruvbox-light.json)
+├── omp/.omp/agent/
+│   ├── models.yml            (Kiro thinking-ladder bridge)
+│   └── AGENTS.md             (steering refs)
 ├── starship/.config/starship.toml
 ├── tmux/
 │   ├── .tmux.conf
@@ -126,6 +143,7 @@ zplugin-update
 - Zoxide replaces `cd` via `--cmd cd` flag — smart matching with full `cd /exact/path` still working
 - Employer-specific agent config (`~/.kiro/steering/`) is intentionally untracked — it documents internal build and deployment systems that don't belong in a personal repo, and wouldn't apply elsewhere. The pi steering extension no-ops when the directory is absent.
 - `~/.pi/agent/npm/package.json` is derived from `settings.json` by pi and is not tracked; `packages` in `settings.json` is the source of truth
+- **`~/.omp/agent/config.yml` is deliberately not stowed.** omp rewrites it atomically (temp file + rename), and a rename replaces a symlink with a real file — the dotfiles copy would silently go stale on the first write. omp also persists its own UI toggles there, so the file is genuinely dynamic. `setup-omp.sh` applies the handful of settings worth reproducing instead. `models.yml` and `AGENTS.md` *are* stowed: omp reads but never rewrites those.
 
 ## Keybindings
 
