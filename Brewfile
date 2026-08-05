@@ -17,7 +17,7 @@ brew "eza"           # ls replacement
 brew "bat"           # cat replacement
 brew "ripgrep"       # grep replacement
 brew "tmux"          # terminal multiplexer
-brew "herdr"         # agent multiplexer (may require an internal tap on some machines)
+brew "herdr"         # agent multiplexer (homebrew-core, Apache-2.0)
 
 # --- dev tooling ---
 brew "cloc"          # count lines of code
