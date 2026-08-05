@@ -159,3 +159,32 @@ zplugin-update
 ### Herdr (prefix: `` ` ``)
 
 herdr's prefix is set to a bare backtick to match tmux, so the leader key is consistent across both multiplexers. Default herdr keybindings apply after the prefix; only the prefix is customized. Reload config with `herdr server reload-config`.
+
+### Oh My Pi (`omp`)
+
+Defaults, not customized here. Remaps go in `~/.omp/agent/keybindings.yml` — a flat action-id map, **not** `config.yml`. An empty array disables a binding. `/hotkeys` lists the live bindings.
+
+| Key | Action |
+|-----|--------|
+| `Ctrl+P` | Cycle models |
+| `Alt+M` | Model selector |
+| `Alt+P` | Temporary model (this turn only) |
+| `Shift+Tab` | Cycle thinking level |
+| `Ctrl+T` | Toggle thinking blocks |
+| `Ctrl+O` | Expand tool output (also expands compaction dividers) |
+| `Ctrl+Shift+O` | Hide tool activity |
+| `Enter` (while streaming) | **Steer** the running turn |
+| `Ctrl+Enter` / `Ctrl+Q` | **Queue** a follow-up for after the turn |
+| `Shift+Up` | Dequeue the follow-up |
+| `Ctrl+R` | Prompt history |
+| `Ctrl+G` | Edit draft in `$EDITOR` |
+| `Alt+R` | Retry failed turn |
+| `Alt+A` | Agent hub |
+| `Ctrl+V` | Paste image |
+| `Ctrl+L` | Live voice |
+| Hold `Space` | Push-to-talk speech-to-text |
+
+The steer-versus-queue split is the one worth building a habit around: mid-stream, plain `Enter` redirects the turn that is already running, while `Ctrl+Enter` holds your message until it finishes. Redirecting beats waiting and re-prompting.
+
+Note `Ctrl+T` and `Ctrl+R` collide with the zsh bindings above. Inside omp the omp binding wins, since it owns the terminal; the zsh ones apply at the shell prompt.
+
