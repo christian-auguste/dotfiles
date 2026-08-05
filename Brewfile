@@ -3,6 +3,10 @@
 # Prune anything NOT listed here:  brew bundle cleanup --file=~/dotfiles/Brewfile
 # Works on macOS and Linux (Homebrew). GUI casks + fonts are macOS-only and guarded.
 
+# --- third-party taps ---
+# Untrusted on first use; run `brew trust can1357/tap` once per machine.
+tap "can1357/tap"
+
 # --- dotfiles stack (see README) ---
 brew "stow"          # symlink-manages this repo
 brew "starship"      # prompt
@@ -19,6 +23,8 @@ brew "herdr"         # agent multiplexer (may require an internal tap on some ma
 brew "cloc"          # count lines of code
 brew "mise"          # polyglot runtime version manager
 brew "node"          # JS runtime (mise can also manage node; kept for a system default)
+brew "bun"           # JS runtime + package manager; required by `omp install`
+brew "can1357/tap/omp" # oh-my-pi coding agent
 brew "git-lfs"       # large-file versioning
 brew "pipx"          # isolated Python CLIs
 brew "ruby"          # scripting
