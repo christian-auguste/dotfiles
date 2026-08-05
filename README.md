@@ -167,8 +167,8 @@ Defaults, not customized here. Remaps go in `~/.omp/agent/keybindings.yml` — a
 | Key | Action |
 |-----|--------|
 | `Ctrl+P` | Cycle models |
-| `Alt+M` | Model selector |
-| `Alt+P` | Temporary model (this turn only) |
+| `Alt+M` | Model selector — assigning a role **writes `modelRoles` into `config.yml`** |
+| `Alt+P` | Temporary model (rest of this session, not persisted to `config.yml`) |
 | `Shift+Tab` | Cycle thinking level |
 | `Ctrl+T` | Toggle thinking blocks |
 | `Ctrl+O` | Expand tool output (also expands compaction dividers) |
