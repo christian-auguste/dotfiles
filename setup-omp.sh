@@ -52,10 +52,31 @@ set_cfg symbolPreset nerd     # needs a nerd font in the terminal
 
 step "Plugins"
 # pi-provider-kiro is required: without it no kiro/* model resolves.
-for spec in npm:pi-provider-kiro git:github.com/DietrichGebert/ponytail; do
-  name="${spec##*/}"; name="${name#npm:}"
-  if omp plugin list 2>/dev/null | grep -qi "${name}"; then
-    ok "$name already installed"
+#
+# SWAPPED from `npm:pi-provider-kiro` to a git install of my fork, to fix omp
+# effort selection. The npm release (0.9.3) registers kiro models through
+# `pi.registerProvider(...)`, which omp's models.yml `modelOverrides` merge
+# never revisits -- so no config can bolt a thinking ladder onto them, and
+# Shift+Tab has nothing to cycle. The fork derives each model's effort levels
+# from Kiro's authenticated catalog and emits omp's `thinking` config on the
+# descriptors it registers. Upstream PR is open, not merged:
+# https://github.com/mikeyobrien/pi-provider-kiro/pull/109
+# Drop the fork for `npm:pi-provider-kiro` once that lands in a release.
+#
+# Pinned to the branch, not a SHA, so re-running picks up PR review fixes.
+#
+# Entries are `<marker>|<spec>`. The marker is matched against the dependency
+# *source* in plugins/package.json, not `omp plugin list` -- list prints the
+# resolved name (`pi-provider-kiro`) identically for the npm release and the
+# fork, so it cannot tell them apart. Matching the source catches a machine
+# still on npm and corrects it.
+for entry in \
+  'christian-auguste/pi-provider-kiro|github:christian-auguste/pi-provider-kiro#fix/omp-thinking-config' \
+  'DietrichGebert/ponytail|git:github.com/DietrichGebert/ponytail'
+do
+  marker="${entry%%|*}"; spec="${entry#*|}"; name="${marker##*/}"
+  if grep -qF "$marker" "$HOME/.omp/plugins/package.json" 2>/dev/null; then
+    ok "$name already installed from ${marker%%/*}"
   elif omp install "$spec" >/dev/null 2>&1; then
     ok "installed $spec"
   else
