@@ -51,27 +51,14 @@ set_cfg theme.light light-gruvbox
 set_cfg symbolPreset nerd     # needs a nerd font in the terminal
 
 step "Plugins"
-# pi-provider-kiro is required: without it no kiro/* model resolves.
-#
-# SWAPPED from `npm:pi-provider-kiro` to a git install of my fork, to fix omp
-# effort selection. The npm release (0.9.3) registers kiro models through
-# `pi.registerProvider(...)`, which omp's models.yml `modelOverrides` merge
-# never revisits -- so no config can bolt a thinking ladder onto them, and
-# Shift+Tab has nothing to cycle. The fork derives each model's effort levels
-# from Kiro's authenticated catalog and emits omp's `thinking` config on the
-# descriptors it registers. Upstream PR is open, not merged:
-# https://github.com/mikeyobrien/pi-provider-kiro/pull/109
-# Drop the fork for `npm:pi-provider-kiro` once that lands in a release.
-#
-# Pinned to the branch, not a SHA, so re-running picks up PR review fixes.
+# pi-provider-kiro was removed: the reasoning-effort fix has merged upstream
+# (mikeyobrien/pi-provider-kiro#109) and kiro is no longer used, so neither
+# the fork nor the npm release is installed.
 #
 # Entries are `<marker>|<spec>`. The marker is matched against the dependency
-# *source* in plugins/package.json, not `omp plugin list` -- list prints the
-# resolved name (`pi-provider-kiro`) identically for the npm release and the
-# fork, so it cannot tell them apart. Matching the source catches a machine
-# still on npm and corrects it.
+# *source* in plugins/package.json, not `omp plugin list`, which prints the
+# resolved name identically regardless of how the plugin was installed.
 for entry in \
-  'christian-auguste/pi-provider-kiro|github:christian-auguste/pi-provider-kiro#fix/omp-thinking-config' \
   'DietrichGebert/ponytail|git:github.com/DietrichGebert/ponytail'
 do
   marker="${entry%%|*}"; spec="${entry#*|}"; name="${marker##*/}"
@@ -84,16 +71,77 @@ do
   fi
 done
 
+step "LSP"
+# Register the language servers the Brewfile installs. omp auto-detects these
+# built-ins by root marker and PATH, but the explicit user-level config keeps
+# the mapping deterministic. Commands are bare binary names, so resolution
+# follows PATH and survives brew version bumps (no cellar paths).
+lsp_json="$HOME/.omp/agent/lsp.json"
+lsp_tmp="$(mktemp)"
+cat >"$lsp_tmp" <<'JSON'
+{
+  "servers": {
+    "typescript-language-server": {
+      "command": "typescript-language-server",
+      "args": ["--stdio"],
+      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
+      "rootMarkers": ["tsconfig.json", "package.json"]
+    },
+    "basedpyright": {
+      "command": "basedpyright-langserver",
+      "args": ["--stdio"],
+      "fileTypes": [".py"],
+      "rootMarkers": ["pyproject.toml", "setup.py", "setup.cfg", "pyrightconfig.json", "requirements.txt"]
+    },
+    "rust-analyzer": {
+      "command": "rust-analyzer",
+      "fileTypes": [".rs"],
+      "rootMarkers": ["Cargo.toml", ".git"]
+    },
+    "vscode-html-language-server": {
+      "command": "vscode-html-language-server",
+      "args": ["--stdio"],
+      "fileTypes": [".html", ".htm", ".svg"],
+      "rootMarkers": ["package.json", ".git"]
+    },
+    "vscode-css-language-server": {
+      "command": "vscode-css-language-server",
+      "args": ["--stdio"],
+      "fileTypes": [".css", ".scss", ".less"],
+      "rootMarkers": ["package.json", ".git"]
+    },
+    "vscode-json-language-server": {
+      "command": "vscode-json-language-server",
+      "args": ["--stdio"],
+      "fileTypes": [".json"],
+      "rootMarkers": ["package.json", ".git"]
+    },
+    "eslint": {
+      "command": "vscode-eslint-language-server",
+      "args": ["--stdio"],
+      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"],
+      "rootMarkers": [".eslintrc", ".eslintrc.json", ".eslintrc.js", "eslint.config.js", "package.json"]
+    }
+  }
+}
+JSON
+if [ -f "$lsp_json" ] && cmp -s "$lsp_json" "$lsp_tmp"; then
+  ok "lsp.json already up to date"
+  rm -f "$lsp_tmp"
+else
+  mkdir -p "$(dirname "$lsp_json")"
+  mv "$lsp_tmp" "$lsp_json"
+  ok "wrote $lsp_json"
+fi
+
 step "Manual steps left"
 cat <<'EOF'
-  1. Authenticate Kiro: a logged-in kiro-cli session is picked up
-     automatically, otherwise run /login kiro inside omp.
-  2. Decide tools.approvalMode. It ships as `yolo` (auto-approves everything);
+  1. Decide tools.approvalMode. It ships as `yolo` (auto-approves everything);
      `write` prompts on shell commands.
-  3. `cd ~/dotfiles && stow omp` -- carries AGENTS.md, which omp reads but never
+  2. `cd ~/dotfiles && stow omp` -- carries AGENTS.md, which omp reads but never
      rewrites. config.yml is excluded on purpose: omp rewrites it atomically and
      a rename would replace the symlink with a real file.
-  4. Pick a session model with Alt+P. Alt+M writes modelRoles into config.yml.
+  3. Pick a session model with Alt+P. Alt+M writes modelRoles into config.yml.
 EOF
 
 printf '\n%s✓ Done.%s Verify with: omp config list | head -40\n' "$G$B" "$X"
