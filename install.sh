@@ -16,6 +16,14 @@ ok()   { printf '  %s✓%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '  %s!%s %s\n' "$Y" "$X" "$*" >&2; WARN=$((WARN + 1)); }
 die()  { printf '  %s✗%s %s\n' "$R" "$X" "$*" >&2; exit 1; }
 
+# A cask install that needs sudo (quitting/relaunching the app, privileged
+# files) or a mistyped sudo password can leave the tty with ONLCR cleared, so
+# every following \n moves the cursor down without returning it to column 0 —
+# each line then starts wherever the previous one ended, producing the
+# staircase effect. Reset on exit so a broken run doesn't leak into the shell
+# the script was launched from.
+trap 'stty sane 2>/dev/null || true' EXIT
+
 DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Homebrew keeps its tap-trust store at $XDG_CONFIG_HOME/homebrew/trust.json,
@@ -24,6 +32,70 @@ DOTFILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # otherwise `brew trust` below writes to ~/.homebrew and the login shell, which
 # looks in ~/.config, never sees it.
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+# --- trust helpers -----------------------------------------------------------
+# Resolve the trust store exactly the way brew does. bin/brew picks
+# HOMEBREW_USER_CONFIG_HOME as $XDG_CONFIG_HOME/homebrew, else
+# $HOMEBREW_XDG_CONFIG_HOME/homebrew, else ~/.homebrew; Library/Homebrew/trust.rb
+# then reads and writes <that dir>/trust.json. Nothing is cached between runs and
+# `brew update` is irrelevant — a "correct-looking" trust.json that brew ignores
+# is always a trust.json in the *other* directory. This is the footgun above,
+# observed from the other side: the file exists, just not where brew is looking.
+_brew_user_config_home() {
+  if   [ -n "${XDG_CONFIG_HOME:-}" ];          then printf '%s\n' "$XDG_CONFIG_HOME/homebrew"
+  elif [ -n "${HOMEBREW_XDG_CONFIG_HOME:-}" ]; then printf '%s\n' "$HOMEBREW_XDG_CONFIG_HOME/homebrew"
+  else                                              printf '%s\n' "$HOME/.homebrew"; fi
+}
+TRUST_FILE="$(_brew_user_config_home)/trust.json"
+TRUST_FILE_STRAY="$HOME/.homebrew/trust.json"   # where a bare `brew trust` lands
+
+# Ask brew itself what it trusts. `brew trust --json=v1 --tap|--formula|--cask`
+# prints a flat JSON array of names, so a quoted-string scrape is enough and we
+# do not need jq this early in the bootstrap. Names are stored downcased already,
+# but lowercase here too so both sides of every _in_list comparison match on
+# the same normalization rather than relying on brew's storage convention.
+_trusted_entries() { brew trust --json=v1 "$1" 2>/dev/null | grep -o '"[^"]*"' | tr -d '"' | tr '[:upper:]' '[:lower:]'; }
+_in_list() { [ -n "$1" ] && printf '%s\n' "$2" | grep -qxF "$1"; }
+_lower() { printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]'; }
+
+# Fully-qualified Brewfile entries, as "<type> <user/repo/name>" records. Only
+# these need trust: brew loads Ruby for them, and a bare `tap` line does not.
+# Two sed calls because BSD sed has no \| alternation.
+_brewfile_items() {
+  sed -n 's|^[[:space:]]*brew[[:space:]]*"\([^"]*/[^"]*/[^"]*\)".*|formula \1|p' "$1"
+  sed -n 's|^[[:space:]]*cask[[:space:]]*"\([^"]*/[^"]*/[^"]*\)".*|cask \1|p' "$1"
+}
+
+# One "<kind>|<original line>" record per installable entry. The whole source
+# line is kept so per-entry retries preserve options (args:, link:, ...).
+_brewfile_entries() {
+  sed -n -e 's|^[[:space:]]*\(tap[[:space:]].*\)$|tap\|\1|p' \
+         -e 's|^[[:space:]]*\(brew[[:space:]].*\)$|brew\|\1|p' \
+         -e 's|^[[:space:]]*\(cask[[:space:]].*\)$|cask\|\1|p' "$1"
+}
+
+# Untrusted fully-qualified entries, as "<type> <name>". An entry is fine if its
+# whole tap is trusted or the item itself is; that mirrors Trust.trusted?.
+untrusted_items() {
+  local ttaps tformulae tcasks type name tap
+  ttaps="$(_trusted_entries --tap)"
+  tformulae="$(_trusted_entries --formula)"
+  tcasks="$(_trusted_entries --cask)"
+  while IFS=' ' read -r type name; do
+    [ -n "$name" ] || continue
+    name="$(_lower "$name")"
+    tap="${name%/*}"
+    case "$tap" in homebrew/*) continue ;; esac       # official taps are implicit
+    _in_list "$tap" "$ttaps" && continue
+    case "$type" in
+      formula) _in_list "$name" "$tformulae" && continue ;;
+      cask)    _in_list "$name" "$tcasks"    && continue ;;
+    esac
+    printf '%s %s\n' "$type" "$name"
+  done <<EOF
+$(_brewfile_items "$1")
+EOF
+}
 
 # --- coexist helpers ---------------------------------------------------------
 # Shared shell files (~/.zshenv, ~/.zshrc) are also written to by tools like
@@ -124,44 +196,115 @@ else
 fi
 
 # 3. Preflight: the one decision Homebrew needs a human for.
-#    `brew bundle` SKIPS formulae from untrusted third-party taps rather than
-#    failing, so a missing tool otherwise shows up as a silent no-op minutes
-#    later. Ask brew which taps it is refusing and resolve it up front.
+#    An untrusted third-party formula does NOT get skipped — brew raises
+#    UntrustedTapError while it builds the dependency map, before it installs
+#    anything, so the whole Brewfile aborts with zero packages installed.
+#    Resolve it up front, asking brew for its trust state directly rather than
+#    scraping suggestions out of `brew bundle check` (which never prints them).
 step "Preflight: third-party tap trust"
-trust_cmds="$(brew bundle check --verbose --file="$DOTFILES/Brewfile" 2>&1 |
-  grep -o 'brew trust [^`]*' | sort -u)"
-if [ -z "$trust_cmds" ]; then
-  ok "all third-party taps trusted"
+untrusted="$(untrusted_items "$DOTFILES/Brewfile")"
+if [ -z "$untrusted" ]; then
+  ok "all third-party Brewfile entries trusted"
 else
-  warn "Homebrew is ignoring third-party taps in the Brewfile until they are trusted."
-  printf '    Trusting a tap lets its Ruby formula code run during brew operations,\n'
-  printf '    so it is a per-machine security decision and cannot live in the Brewfile.\n'
-  printf '    Leave them untrusted and their tools are skipped, not installed.\n'
-  printf '    Suggested by brew:\n'
-  while IFS= read -r c; do printf '      %s\n' "$c"; done <<<"$trust_cmds"
+  warn "Homebrew will refuse to load these Brewfile entries until they are trusted:"
+  while IFS=' ' read -r type name; do
+    [ -n "$name" ] && printf '      %s %s\n' "$type" "$name"
+  done <<<"$untrusted"
+  printf '    Trusting an entry lets that tap'\''s Ruby code run during brew operations,\n'
+  printf '    so it is a per-machine security decision. Trust store: %s\n' "$TRUST_FILE"
   if [ ! -t 0 ]; then
-    warn "non-interactive — run the command(s) above, then re-run this script"
+    warn "non-interactive — trust them, then re-run; untrusted entries are skipped below"
   else
-    read -r -p "    Run them now? [y/N] " a
+    read -r -p "    Trust them now? [y/N] " a
     if [ "$a" = y ] || [ "$a" = Y ]; then
-      while IFS= read -r c; do
-        # Only ever run the narrow shape we asked grep for; brew's stdout is the
-        # source, but this stays a guard rather than trusting parsed text.
-        if [[ ! $c =~ ^brew\ trust\ (--formula\ |--cask\ |--tap\ )?[A-Za-z0-9/@._-]+$ ]]; then
-          warn "skipped unexpected command: $c"; continue
+      while IFS=' ' read -r type name; do
+        [ -n "$name" ] || continue
+        # Names come from the Brewfile, but keep the shape check: this string
+        # becomes a brew argument.
+        if [[ ! $name =~ ^[a-z0-9][a-z0-9/@._-]*$ ]]; then
+          warn "skipped unexpected name: $name"; continue
         fi
-        if $c >/dev/null 2>&1; then ok "trusted ${c#brew trust }"; else warn "failed: $c"; fi
-      done <<<"$trust_cmds"
+        # Trust the single item, not the whole tap — narrowest grant that works.
+        if brew trust "--$type" "$name" >/dev/null 2>&1; then ok "trusted $type $name"
+        else warn "brew trust --$type $name failed"; fi
+      done <<<"$untrusted"
+      untrusted="$(untrusted_items "$DOTFILES/Brewfile")"
+      [ -z "$untrusted" ] && ok "trust store now covers every third-party entry" \
+                          || warn "still untrusted after brew trust — see the diagnostic below"
     else
-      ok "skipped — tools from those taps will not be installed"
+      ok "skipped — those entries will be left out of the install below"
     fi
   fi
 fi
 
+# 3b. Diagnostic: the effective trust state, printed right before the bundle so a
+#     future failure explains itself instead of needing this investigation again.
+step "Trust state for this brew run"
+printf '  %s-%s XDG_CONFIG_HOME: %s\n' "$C" "$X" "${XDG_CONFIG_HOME:-<unset>}"
+if [ -f "$TRUST_FILE" ]; then
+  printf '  %s-%s trust store:     %s (present)\n' "$C" "$X" "$TRUST_FILE"
+else
+  printf '  %s-%s trust store:     %s (%smissing%s — nothing is trusted)\n' "$C" "$X" "$TRUST_FILE" "$Y" "$X"
+fi
+brew trust 2>&1 | sed 's/^/    /'
+# The footgun in the header, caught from the other side: a `brew trust` run in a
+# shell without XDG_CONFIG_HOME writes ~/.homebrew/trust.json, which brew then
+# ignores here. Same JSON, wrong directory, and the error message never says so.
+if [ "$TRUST_FILE" != "$TRUST_FILE_STRAY" ] && [ -f "$TRUST_FILE_STRAY" ]; then
+  warn "a second trust store exists at $TRUST_FILE_STRAY — brew is NOT reading it"
+  printf '    It was written by a `brew trust` run in a shell without XDG_CONFIG_HOME set.\n'
+  printf '    Re-trust from this script, or from a shell where XDG_CONFIG_HOME=%s.\n' "$XDG_CONFIG_HOME"
+fi
+
 # 4. Packages (casks/fonts auto-skip on Linux via the Brewfile's OS.mac? guard)
 step "Installing packages from Brewfile"
-if brew bundle --file="$DOTFILES/Brewfile"; then ok "Brewfile satisfied"
-else warn "Some Brewfile entries failed (internal-tap or unavailable formula). Continuing."; fi
+bundle_file="$DOTFILES/Brewfile"
+bundle_err="$(mktemp)"
+if brew bundle --file="$bundle_file" 2>"$bundle_err"; then
+  ok "Brewfile satisfied"
+  rm -f "$bundle_err"
+else
+  # brew bundle is all-or-nothing at the batch level: with the default
+  # --jobs=auto it loads every formula to build a dependency map before the
+  # first install, so one unloadable entry takes the whole run down and NOTHING
+  # gets installed. Surface brew's own words, then retry entry by entry — each
+  # in its own one-line Brewfile — so a single bad tap cannot cascade.
+  warn "brew bundle failed as a batch. brew reported:"
+  sed 's/^/      /' "$bundle_err" >&2
+  rm -f "$bundle_err"
+  warn "retrying entry-by-entry so one bad entry cannot block the rest"
+  bundle_tmp="$(mktemp -d)"
+  bundle_taps="$(sed -n 's/^[[:space:]]*\(tap[[:space:]].*\)$/\1/p' "$bundle_file")"
+  bundle_fail=0
+  while IFS='|' read -r kind line; do
+    [ -n "$line" ] || continue
+    case "$kind" in tap) continue ;; esac        # taps ride along in every file
+    one="$bundle_tmp/Brewfile"
+    {
+      printf '%s\n' "$bundle_taps"
+      # Keep the Brewfile's OS.mac? guard so cask entries still no-op on Linux.
+      if [ "$kind" = cask ]; then printf 'if OS.mac?\n%s\nend\n' "$line"
+      else printf '%s\n' "$line"; fi
+    } >"$one"
+    # Merge both streams: trust errors land on stderr, build logs on stdout.
+    if ! brew bundle --file="$one" --quiet >"$bundle_tmp/log" 2>&1; then
+      bundle_fail=$((bundle_fail + 1))
+      warn "failed: $line"
+      tail -n 15 "$bundle_tmp/log" | sed 's/^/        /' >&2
+    fi
+  done < <(_brewfile_entries "$bundle_file")
+  rm -rf "$bundle_tmp"
+  if [ "$bundle_fail" -eq 0 ]; then
+    ok "all entries installed individually"
+  else
+    [ "$bundle_fail" -eq 1 ] && n="entry" || n="entries"
+    warn "$bundle_fail Brewfile $n failed — see the errors above. Continuing."
+  fi
+fi
+# A sudo-gated cask (e.g. an app that needs quitting/relaunching, like obs) can
+# leave the tty with ONLCR cleared even on success. Reset now instead of
+# waiting for the EXIT trap, so the remaining steps render correctly too.
+stty sane 2>/dev/null || true
 
 # 5. Directories the zsh config expects
 step "Creating XDG directories"
@@ -174,6 +317,33 @@ cd "$DOTFILES"
 if command -v stow >/dev/null 2>&1; then
   for pkg in */; do
     pkg="${pkg%/}"
+
+    # A real file or directory already sitting at a target path makes stow
+    # abort the WHOLE package, not just that one path (this bit starship on a
+    # fresh machine before ~/dotfiles existed, and had to be fixed by hand).
+    # Simulate first and back conflicts out of the way so the real run has
+    # nothing left to trip over. --adopt would do this too, but it pulls
+    # whatever is on the machine INTO the repo — exactly backwards from what
+    # we want, which is the repo's tracked content winning.
+    dry_err="$(mktemp)"
+    if ! stow -n --restow "$pkg" 2>"$dry_err"; then
+      while IFS= read -r rel; do
+        [ -n "$rel" ] || continue
+        target="$HOME/$rel"
+        bak="$target.dotfiles-bak"
+        if [ -L "$target" ] || [ ! -e "$target" ]; then
+          continue      # already a symlink (or gone) — not the conflict this loop backs up
+        elif [ -e "$bak" ]; then
+          warn "$pkg: $rel conflicts and $(basename "$bak") already exists — leaving in place, resolve by hand"
+        else
+          mkdir -p "$(dirname "$bak")" &&
+            mv "$target" "$bak" && ok "$pkg: backed up conflicting $rel -> $(basename "$bak")" ||
+            warn "$pkg: could not back up $rel"
+        fi
+      done < <(sed -E -n 's/.*over existing (non-directory |directory )?target ([^ ]+).*/\2/p' "$dry_err")
+    fi
+    rm -f "$dry_err"
+
     err="$(mktemp)"
     if stow --restow "$pkg" 2>"$err"; then ok "stow $pkg"
     else warn "stow $pkg: $(tr '\n' ' ' <"$err" | sed 's/  */ /g')"; fi
