@@ -1,2 +1,6 @@
 tmux/.tmux/plugins/
 zsh/.config/zsh/plugins/
+omp/.omp/*
+!omp/.omp/agent/
+omp/.omp/agent/*
+!omp/.omp/agent/AGENTS.md
