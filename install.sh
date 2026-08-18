@@ -305,6 +305,15 @@ fi
 # leave the tty with ONLCR cleared even on success. Reset now instead of
 # waiting for the EXIT trap, so the remaining steps render correctly too.
 stty sane 2>/dev/null || true
+# Pi is published to npm; Node is installed by the Brewfile.
+step "Installing Pi CLI"
+if command -v pi >/dev/null 2>&1; then
+  ok "pi already installed"
+elif command -v npm >/dev/null 2>&1 && npm install --global --ignore-scripts @earendil-works/pi-coding-agent; then
+  ok "Pi CLI installed"
+else
+  warn "could not install Pi CLI — run: npm install --global --ignore-scripts @earendil-works/pi-coding-agent"
+fi
 
 # 5. Directories the zsh config expects
 step "Creating XDG directories"

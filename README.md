@@ -17,10 +17,11 @@ git clone git@github.com:christian-auguste/dotfiles.git ~/dotfiles
 ```
 
 `install.sh` is idempotent (safe to re-run). It installs Homebrew if missing,
-runs `brew bundle` against the [Brewfile](./Brewfile), creates the XDG dirs the
-zsh config expects, `stow`s the packages the dotfiles own, wires the shared
-shell files (see Notes → coexist), and clones TPM. On Linux the macOS
-casks/fonts in the Brewfile are skipped automatically.
+runs `brew bundle` against the [Brewfile](./Brewfile), installs the standalone
+Pi CLI from npm, creates the XDG dirs the zsh config expects, `stow`s the
+packages the dotfiles own, wires the shared shell files (see Notes → coexist),
+and clones TPM. On Linux the macOS casks/fonts in the Brewfile are skipped
+automatically.
 
 Finish tmux setup: open tmux and press `` ` `` then `I` to install plugins.
 
@@ -31,6 +32,11 @@ the setup wizard writes `config.yml` before this script can edit it:
 omp                    # let the wizard run, then quit
 ~/dotfiles/setup-omp.sh
 ```
+
+The standalone `pi` command and OMP's `omp` command can coexist. Pi's tracked
+configuration is `pi/.pi/` and is applied by the normal Stow step; launch `pi`
+once after installation so it can install the packages listed in
+`~/.pi/agent/settings.json`.
 
 `setup-omp.sh` is idempotent too. It sets only the settings that differ from
 omp's own defaults, installs the Kiro provider plugin, and never deletes keys —
@@ -46,6 +52,9 @@ eval "$(/opt/homebrew/bin/brew shellenv)"          # Linux: /home/linuxbrew/.lin
 
 # 2. Packages
 brew bundle --file=~/dotfiles/Brewfile
+
+# 2b. Standalone Pi CLI (npm, not Homebrew)
+npm install --global --ignore-scripts @earendil-works/pi-coding-agent
 
 # 3. Required directories
 mkdir -p ~/.local/state/zsh ~/.cache/zsh
