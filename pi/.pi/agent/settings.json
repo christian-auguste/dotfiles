@@ -5,23 +5,21 @@
     "npm:pi-total-recall",
     "npm:@aliou/pi-processes",
     "npm:pi-web-access",
-    "npm:pi-provider-kiro"
+    "npm:pi-opencode-bridge"
   ],
-  "lastChangelogVersion": "0.82.0",
+  "lastChangelogVersion": "0.84.2",
   "theme": "gruvbox-light",
-  "defaultProvider": "kiro",
-  "defaultModel": "claude-opus-5",
-  "defaultThinkingLevel": "high",
+  "defaultProvider": "opencode-go",
+  "defaultModel": "gpt-5.6-luna",
+  "defaultThinkingLevel": "medium",
   "enabledModels": [
-    "kiro/claude-sonnet-5",
-    "kiro/claude-opus-4-8",
-    "kiro/claude-fable-5",
-    "kiro/gpt-5-6-sol",
-    "kiro/claude-opus-5"
+    "opencode-go/deepseek-v4-pro",
+    "opencode-go/gpt-5.6-luna",
+    "opencode-go/deepseek-v4-flash"
   ],
-  "hideThinkingBlock": false,
+  "hideThinkingBlock": true,
   "quietStartup": true,
   "memory": {
-    "consolidationModel": "kiro/claude-sonnet-5"
+    "consolidationModel": "opencode-go/gpt-5.6-luna"
   }
 }

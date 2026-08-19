@@ -8,3 +8,18 @@ omp/.omp/agent/*
 !omp/.omp/agent/package.json
 !omp/.omp/agent/tsconfig.json
 !omp/.omp/agent/lsp.json
+
+# Pi runtime state: keep intentional config tracked, but leave private/generated
+# auth, caches, databases, sessions, and installed packages on the machine.
+pi/.pi/agent/auth.json
+pi/.pi/agent/mcp-cache.json
+pi/.pi/agent/models-store.json
+pi/.pi/agent/npm/
+pi/.pi/agent/sessions/
+pi/.pi/agent/sessions-archive/
+pi/.pi/agent/steering-selection.json
+pi/.pi/agent/ollama-autostart.log
+pi/.pi/agent/web-search-cache/
+pi/.pi/knowledge-search/
+pi/.pi/memory/
+pi/.pi/session-search/
