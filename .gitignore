@@ -24,3 +24,7 @@ pi/.pi/agent/web-search-cache/
 pi/.pi/knowledge-search/
 pi/.pi/memory/
 pi/.pi/session-search/
+
+# herdr runtime state: keep config tracked, ignore per-run session state.
+herdr/.config/herdr/.plugins.lock
+herdr/.config/herdr/session.json
