@@ -1,0 +1,14 @@
+#!/bin/sh
+# OMP bash child seam: scrubs credential env, then execs the real shell.
+# shellPath points here; the "bash" basename keeps OMP's snapshot/login/PTY
+# semantics intact. SSH_AUTH_SOCK is kept (git-over-SSH must work; ~/.ssh path
+# policy is the boundary). PI_SANDBOX_OFF=1 and PI_SANDBOX_REAL_SHELL override
+# the default behavior (unsandboxed mode, and non-bash shell respectively).
+
+if [ -z "${PI_SANDBOX_OFF:-}" ]; then
+  unset AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_SESSION_TOKEN \
+        AWS_SECURITY_TOKEN GIT_ASKPASS GNUPGHOME 2>/dev/null || true
+fi
+
+real_shell="${PI_SANDBOX_REAL_SHELL:-/bin/bash}"
+exec "$real_shell" "$@"
