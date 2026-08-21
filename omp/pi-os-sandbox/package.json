@@ -1,0 +1,22 @@
+{
+  "name": "pi-os-sandbox",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared safety policy and child-process sandbox seam for Pi and OMP. One policy core, thin adapters, fail-closed headless behavior.",
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "bun test"
+  },
+  "omp": {
+    "extensions": ["./extensions/omp.ts"]
+  },
+  "pi": {
+    "extensions": ["./extensions/pi.ts"]
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "@types/node": "^26.2.0",
+    "typescript": "^7.0.2"
+  }
+}

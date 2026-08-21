@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ES2022"],
+    "types": ["bun"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "isolatedModules": true,
+    "forceConsistentCasingInFileNames": true,
+    "noUncheckedIndexedAccess": true,
+    "paths": {
+      "@oh-my-pi/pi-coding-agent": ["../.omp/agent/node_modules/@oh-my-pi/pi-coding-agent/dist/types/index.d.ts"]
+    }
+  },
+  "include": ["src", "extensions", "test"]
+}
