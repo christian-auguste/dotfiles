@@ -28,3 +28,5 @@ pi/.pi/session-search/
 # herdr runtime state: keep config tracked, ignore per-run session state.
 herdr/.config/herdr/.plugins.lock
 herdr/.config/herdr/session.json
+herdr/.config/herdr/*.log
+herdr/.config/herdr/release-notes.json

@@ -40,6 +40,14 @@ set_cfg() {  # set_cfg <key> <value>
   fi
 }
 
+step "Safety"
+cat <<'EOF'
+  The destructive guard blocks catastrophic model commands and prompts for
+  recursive developer operations. To add OMP's second eval defense without
+  replacing other per-tool policies, run once:
+    omp config set tools.approval '{"eval":"prompt"}'
+EOF
+
 step "Models"
 # Empty: no numbered role badges and no Ctrl+P cycling, which suits modelRoles
 # staying unset. Shift+Tab cycles thinking level, a separate axis.
