@@ -1,17 +1,10 @@
 #!/usr/bin/env bash
 # Apply my omp settings on a new machine. Idempotent, safe to re-run.
 #
-# Run AFTER launching `omp` once: the setup wizard writes config.yml (including
-# setupVersion and dev.autoqaConsent), and this script edits that file in place
-# rather than replacing it. Overwriting config.yml wholesale drops the wizard's
-# bookkeeping and can re-trigger onboarding.
-#
-# Sets only what differs from omp's schema defaults; everything else is left
-# unset on purpose so it resolves from the schema at read time. Never deletes:
-# `omp config set` cannot express absence and `reset` writes the default in, so
-# keys omp or the TUI add on their own come out by hand from config.yml.
-# Arrays and records must be passed as one JSON argument.
-# disabledProviders is deliberately not set -- that call is per-machine.
+# Run AFTER launching `omp` once: the setup wizard writes config.yml, which
+# this script edits in place (overwriting it drops wizard bookkeeping and can
+# re-trigger onboarding). Sets only values that differ from schema defaults;
+# never deletes keys. Arrays/records must be passed as one JSON argument.
 
 set -uo pipefail
 
@@ -25,8 +18,7 @@ warn() { printf '  %s!%s %s\n' "$Y" "$X" "$*" >&2; }
 command -v omp >/dev/null 2>&1 || { warn "omp not on PATH — install it first (brew install can1357/tap/omp)"; exit 1; }
 command -v bun >/dev/null 2>&1 || warn "bun not on PATH — 'omp install' will fail without it"
 
-# omp keeps tap trust and config under XDG_CONFIG_HOME; pin it so this script
-# writes where an interactive login shell will read.
+# Pin config to where a login shell reads it.
 export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
 
 set_cfg() {  # set_cfg <key> <value>
@@ -41,16 +33,38 @@ set_cfg() {  # set_cfg <key> <value>
 }
 
 step "Safety"
-cat <<'EOF'
-  The destructive guard blocks catastrophic model commands and prompts for
-  recursive developer operations. To add OMP's second eval defense without
+# pi-os-sandbox replaces the destructive-guard extension; bash children route
+# through its env-scrubbing wrapper via shellPath.
+sandbox_src="$HOME/dotfiles/omp/pi-os-sandbox"
+sandbox_ext="$HOME/.omp/agent/extensions/pi-os-sandbox.ts"
+sandbox_wrapper="$sandbox_src/bin/sandbox-bash"
+if [ ! -f "$sandbox_src/package.json" ]; then
+  warn "pi-os-sandbox missing at $sandbox_src — safety swap skipped"
+else
+  # Swap the legacy guard for the new adapter, then route bash through the seam.
+  if [ -e "$HOME/.omp/agent/extensions/destructive-guard.ts" ]; then
+    rm -f "$HOME/.omp/agent/extensions/destructive-guard.ts"
+    ok "removed legacy destructive-guard extension"
+  else
+    ok "legacy destructive-guard already removed"
+  fi
+  if [ ! -L "$sandbox_ext" ] || [ "$(readlink "$sandbox_ext")" != "$sandbox_src/extensions/omp.ts" ]; then
+    ln -sfn "$sandbox_src/extensions/omp.ts" "$sandbox_ext"
+    ok "linked pi-os-sandbox extension"
+  else
+    ok "pi-os-sandbox extension already linked"
+  fi
+  set_cfg shellPath "$sandbox_wrapper"
+  cat <<'EOF'
+  pi-os-sandbox is active: command policy + host path protection + env
+  scrubbing at the child boundary. To add OMP's second eval defense without
   replacing other per-tool policies, run once:
     omp config set tools.approval '{"eval":"prompt"}'
 EOF
+fi
 
 step "Models"
-# Empty: no numbered role badges and no Ctrl+P cycling, which suits modelRoles
-# staying unset. Shift+Tab cycles thinking level, a separate axis.
+# No numbered roles or Ctrl+P cycling; Shift+Tab cycles thinking level instead.
 set_cfg cycleOrder '[]'
 
 step "Appearance"
@@ -59,13 +73,8 @@ set_cfg theme.light light-gruvbox
 set_cfg symbolPreset nerd     # needs a nerd font in the terminal
 
 step "Plugins"
-# pi-provider-kiro was removed: the reasoning-effort fix has merged upstream
-# (mikeyobrien/pi-provider-kiro#109) and kiro is no longer used, so neither
-# the fork nor the npm release is installed.
-#
-# Entries are `<marker>|<spec>`. The marker is matched against the dependency
-# *source* in plugins/package.json, not `omp plugin list`, which prints the
-# resolved name identically regardless of how the plugin was installed.
+# Entries are `<marker>|<spec>`; the marker matches the dependency *source* in
+# plugins/package.json, not the resolved name `omp plugin list` prints.
 for entry in \
   'DietrichGebert/ponytail|git:github.com/DietrichGebert/ponytail'
 do
@@ -80,10 +89,8 @@ do
 done
 
 step "LSP"
-# Register the language servers the Brewfile installs. omp auto-detects these
-# built-ins by root marker and PATH, but the explicit user-level config keeps
-# the mapping deterministic. Commands are bare binary names, so resolution
-# follows PATH and survives brew version bumps (no cellar paths).
+# Explicit user-level server mapping for the Brewfile-installed LSPs; bare
+# binary names survive brew version bumps.
 lsp_json="$HOME/.omp/agent/lsp.json"
 lsp_tmp="$(mktemp)"
 cat >"$lsp_tmp" <<'JSON'
