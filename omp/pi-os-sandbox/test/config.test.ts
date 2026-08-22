@@ -16,7 +16,6 @@ describe("defaultConfig", () => {
       resolve(HOME, ".omp", "agent", "config.yml"),
       resolve(HOME, ".omp", "agent", "pi-os-sandbox.json"),
       resolve(HOME, ".pi", "agent"),
-      resolve(HOME, ".agents", "AGENTS.md"),
     ]);
   });
 
@@ -29,6 +28,12 @@ describe("defaultConfig", () => {
       resolve(HOME, ".docker", "config.json"),
       resolve(HOME, ".kube", "config"),
     ]);
+  });
+
+  test("AGENTS.md is an instruction root, not a safety root", () => {
+    const cfg = defaultConfig();
+    expect(cfg.instructionRoots).toEqual([resolve(HOME, ".agents", "AGENTS.md")]);
+    expect(cfg.safetyRoots).not.toContain(resolve(HOME, ".agents", "AGENTS.md"));
   });
 
   test("metadataHosts are deny-only targets", () => {
@@ -49,9 +54,10 @@ describe("loadConfig", () => {
   });
 
   test("present root arrays replace defaults wholesale; missing keys keep defaults", () => {
-    const cfg = loadConfig({ safetyRoots: ["/custom/safety"], credentialRoots: [] });
+    const cfg = loadConfig({ safetyRoots: ["/custom/safety"], credentialRoots: [], instructionRoots: ["/custom/instr"] });
     expect(cfg.safetyRoots).toEqual(["/custom/safety"]);
     expect(cfg.credentialRoots).toEqual([]);
+    expect(cfg.instructionRoots).toEqual(["/custom/instr"]);
     expect(cfg.metadataHosts).toEqual(defaultConfig().metadataHosts);
   });
 
@@ -64,6 +70,7 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ safetyRoots: "x" })).toThrow();
     expect(() => loadConfig({ safetyRoots: [""] })).toThrow();
     expect(() => loadConfig({ credentialRoots: [42] })).toThrow();
+    expect(() => loadConfig({ instructionRoots: [""] })).toThrow();
   });
 
   test("invalid regex source throws", () => {

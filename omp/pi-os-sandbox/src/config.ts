@@ -15,6 +15,8 @@ export interface SandboxConfig {
   safetyRoots: string[];
   /** Paths where writes are blocked and reads are prompted. */
   credentialRoots: string[];
+  /** Paths the agent must read (instructions); writes are still blocked. */
+  instructionRoots: string[];
   /** Network targets that are deny-only (e.g. cloud metadata services). */
   metadataHosts: RegExp[];
 }
@@ -27,7 +29,6 @@ export function defaultConfig(): SandboxConfig {
       resolve(home, ".omp", "agent", "config.yml"),
       resolve(home, ".omp", "agent", "pi-os-sandbox.json"),
       resolve(home, ".pi", "agent"),
-      resolve(home, ".agents", "AGENTS.md"),
     ],
     credentialRoots: [
       resolve(home, ".ssh"),
@@ -37,6 +38,7 @@ export function defaultConfig(): SandboxConfig {
       resolve(home, ".docker", "config.json"),
       resolve(home, ".kube", "config"),
     ],
+    instructionRoots: [resolve(home, ".agents", "AGENTS.md")],
     metadataHosts: [
       /169\.254\.169\.254/,
       /169\.254\.170\.2/,
@@ -80,6 +82,7 @@ export function loadConfig(raw: unknown): SandboxConfig {
   const input = raw as Record<string, unknown>;
   if ("safetyRoots" in input) cfg.safetyRoots = parseRootList("safetyRoots", input.safetyRoots);
   if ("credentialRoots" in input) cfg.credentialRoots = parseRootList("credentialRoots", input.credentialRoots);
+  if ("instructionRoots" in input) cfg.instructionRoots = parseRootList("instructionRoots", input.instructionRoots);
   if ("metadataHosts" in input) cfg.metadataHosts = parseMetadataHosts(input.metadataHosts);
   return cfg;
 }

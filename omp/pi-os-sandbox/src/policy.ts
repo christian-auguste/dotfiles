@@ -30,6 +30,8 @@ export interface InspectOptions {
 const SAFETY_BLOCK = "Blocked: the agent cannot modify or inspect protected safety state.";
 const ACCESS_BLOCK = "Blocked: the agent cannot access protected safety state.";
 const CREDENTIAL_WRITE_BLOCK = "Blocked: writing to a protected credential path.";
+const INSTRUCTION_WRITE_BLOCK = "Blocked: writing to a protected instruction file.";
+const INSTRUCTION_ACCESS_BLOCK = "Blocked: the agent cannot modify or inspect protected instruction files.";
 const NO_APPROVAL_SUFFIX = " No interactive approval is available.";
 
 function stringField(input: unknown, key: string): string | null {
@@ -58,12 +60,15 @@ export function inspectToolCall(
   cwd: string,
   opts: InspectOptions,
 ): Decision {
-  const { safetyRoots, credentialRoots, metadataHosts } = opts.config;
+  const { safetyRoots, credentialRoots, instructionRoots, metadataHosts } = opts.config;
 
   if (toolName === "bash") {
     const command = stringField(input, "command") ?? "";
     if (mentionsSafetyState(command, cwd, safetyRoots) && !isGitMetadataCommand(command)) {
       return { action: "block", reason: SAFETY_BLOCK };
+    }
+    if (mentionsSafetyState(command, cwd, instructionRoots) && !isGitMetadataCommand(command)) {
+      return { action: "block", reason: INSTRUCTION_ACCESS_BLOCK };
     }
     return apply(classifyCommand(command, metadataHosts), command, cwd, opts);
   }
@@ -73,6 +78,9 @@ export function inspectToolCall(
     if (mentionsSafetyState(code, cwd, safetyRoots)) {
       return { action: "block", reason: SAFETY_BLOCK };
     }
+    if (mentionsSafetyState(code, cwd, instructionRoots)) {
+      return { action: "block", reason: INSTRUCTION_ACCESS_BLOCK };
+    }
     return apply(classifyEval(code, metadataHosts), code, cwd, opts);
   }
 
@@ -80,6 +88,9 @@ export function inspectToolCall(
     for (const value of pathArguments(input)) {
       if (resolveProtectedPath(value, cwd, safetyRoots) !== null) {
         return { action: "block", reason: ACCESS_BLOCK };
+      }
+      if (resolveProtectedPath(value, cwd, instructionRoots) !== null) {
+        continue;
       }
       const root = resolveProtectedPath(value, cwd, credentialRoots);
       if (root !== null) {
@@ -98,6 +109,9 @@ export function inspectToolCall(
     for (const value of pathArguments(input)) {
       if (resolveProtectedPath(value, cwd, safetyRoots) !== null) {
         return { action: "block", reason: ACCESS_BLOCK };
+      }
+      if (resolveProtectedPath(value, cwd, instructionRoots) !== null) {
+        return { action: "block", reason: INSTRUCTION_WRITE_BLOCK };
       }
       if (resolveProtectedPath(value, cwd, credentialRoots) !== null) {
         return { action: "block", reason: CREDENTIAL_WRITE_BLOCK };

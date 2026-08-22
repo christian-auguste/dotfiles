@@ -14,17 +14,22 @@ const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "pi-os-policy-"));
 const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "pi-os-policy-cwd-"));
 const agentDir = path.join(tmpRoot, "omp", "agent");
 const sshDir = path.join(tmpRoot, ".ssh");
+const agentsDir = path.join(tmpRoot, ".agents");
 fs.mkdirSync(agentDir, { recursive: true });
 fs.mkdirSync(sshDir, { recursive: true });
+fs.mkdirSync(agentsDir, { recursive: true });
 
 const safetyFile = path.join(agentDir, "config.yml");
 const credentialFile = path.join(sshDir, "config");
+const instructionFile = path.join(agentsDir, "AGENTS.md");
+fs.writeFileSync(instructionFile, "# test instructions\n");
 
 function config(overrides: Partial<SandboxConfig> = {}): SandboxConfig {
   return {
     ...defaultConfig(),
     safetyRoots: [agentDir],
     credentialRoots: [sshDir],
+    instructionRoots: [agentsDir],
     ...overrides,
   };
 }
@@ -234,6 +239,54 @@ describe("inspectToolCall", () => {
         });
       }
     }
+  });
+
+  test("allows read/grep/glob of instruction roots, blocks writes in both modes", () => {
+    for (const toolName of ["read", "grep", "glob"]) {
+      for (const headless of [false, true]) {
+        const decision = inspectToolCall(toolName, { path: instructionFile }, cwd, {
+          headless,
+          config: config(),
+        });
+        expect(decision).toEqual({ action: "allow" });
+      }
+    }
+
+    for (const toolName of ["write", "edit"]) {
+      for (const headless of [false, true]) {
+        const decision = inspectToolCall(toolName, { path: instructionFile, content: "x" }, cwd, {
+          headless,
+          config: config(),
+        });
+        expect(decision).toEqual({
+          action: "block",
+          reason: "Blocked: writing to a protected instruction file.",
+        });
+      }
+    }
+  });
+
+  test("blocks bash and eval mentions of instruction roots", () => {
+    for (const headless of [false, true]) {
+      const bashDecision = inspectToolCall(
+        "bash",
+        { command: `cat ${instructionFile}` },
+        cwd,
+        { headless, config: config() },
+      );
+      expect(bashDecision).toEqual({
+        action: "block",
+        reason: "Blocked: the agent cannot modify or inspect protected instruction files.",
+      });
+    }
+
+    const evalDecision = inspectToolCall(
+      "eval",
+      { code: `open(${JSON.stringify(instructionFile)})` },
+      cwd,
+      { headless: true, config: config() },
+    );
+    expect(evalDecision.action).toBe("block");
   });
 
   test("allows writes to unprotected paths", () => {
