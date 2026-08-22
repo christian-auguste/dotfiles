@@ -14,3 +14,7 @@
 - Use imperative mood and separate the body with one blank line.
 - Wrap body lines at 72 characters.
 - Explain what changed and why; do not describe implementation steps.
+
+## Output style and Writing
+
+You MUST apply ~/.agents/skills/unslop/SKILL.md to all prose you generate (docs, READMEs, comments, and every message to the user throughout the session). Remove AI tells per that skill before final output.
