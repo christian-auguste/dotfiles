@@ -1,7 +1,9 @@
 /**
  * @fileoverview Recent policy decisions kept in memory for operator
- * diagnostics. Persistence is added in the trust phase.
+ * diagnostics, optionally mirrored to the audit journal.
  */
+
+import type { AuditJournal, JournalKind } from "./audit-journal";
 
 const MAX_ENTRIES = 100;
 
@@ -19,20 +21,44 @@ export interface RingEntry {
   reason: string;
 }
 
+/** Maps a ring kind to the journal kind; block and prompt are both denials. */
+function journalKind(kind: RingEntry["kind"]): JournalKind {
+  return kind === "grant" || kind === "toggle" ? kind : "denial";
+}
+
 /**
- * Capped, newest-first history of decisions, memory-only in this wave. The
- * adapters record each denial and grant so the operator can inspect recent
- * policy behavior without log digging.
+ * Capped, newest-first history of decisions, with an optional audit journal
+ * mirror. The adapters record each denial and grant so the operator can
+ * inspect recent policy behavior without log digging; the journal keeps the
+ * durable copy.
  */
 export class DenialRing {
   private ring: RingEntry[] = [];
+  private readonly journal?: AuditJournal;
 
-  /** Appends an entry and drops the oldest once the cap is exceeded. */
+  /**
+   * Creates an empty ring.
+   *
+   * @param journal optional audit journal; every record is appended to it.
+   */
+  constructor(journal?: AuditJournal) {
+    this.journal = journal;
+  }
+
+  /** Appends an entry, drops the oldest past the cap, and mirrors it to the journal when one is set. */
   record(entry: Omit<RingEntry, "at">): void {
-    this.ring.push({ at: Date.now(), ...entry });
+    const at = Date.now();
+    this.ring.push({ at, ...entry });
     if (this.ring.length > MAX_ENTRIES) {
       this.ring.splice(0, this.ring.length - MAX_ENTRIES);
     }
+    this.journal?.append({
+      at,
+      kind: journalKind(entry.kind),
+      rule: entry.rule,
+      tool: entry.tool,
+      reason: entry.reason,
+    });
   }
 
   /** Returns recorded entries, newest first, capped at 100. */
