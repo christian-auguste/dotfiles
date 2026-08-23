@@ -1,0 +1,138 @@
+/**
+ * @fileoverview Rule registry completeness, tab grouping, hard floor, and
+ * operator toggle persistence against temp config paths.
+ */
+
+import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import {
+  loadDisabledRules,
+  ruleInfo,
+  ruleRegistry,
+  saveDisabledRules,
+} from "../src/customization";
+
+const EXPECTED_IDS = [
+  "root-deletion",
+  "system-destruction",
+  "device-destruction",
+  "fetch-to-shell",
+  "credential-read",
+  "metadata-deny",
+  "safety-state-access",
+  "unverifiable-input",
+  "database-destruction",
+  "recursive-cleanup",
+  "force-push",
+  "opaque-interpreter",
+  "credential-write",
+  "instruction-write",
+  "instruction-access",
+];
+
+const HARD_FLOOR_IDS = EXPECTED_IDS.slice(0, 9);
+
+describe("ruleRegistry", () => {
+  test("lists every stable rule id", () => {
+    expect(ruleRegistry().map((rule) => rule.id)).toEqual(EXPECTED_IDS);
+  });
+
+  test("every rule has display text and a remediation hint", () => {
+    for (const rule of ruleRegistry()) {
+      expect(rule.name.length).toBeGreaterThan(0);
+      expect(rule.description.length).toBeGreaterThan(0);
+      expect(rule.remediation.length).toBeGreaterThan(0);
+    }
+  });
+
+  test("hardFloor matches the catastrophic-floor tab", () => {
+    for (const rule of ruleRegistry()) {
+      expect(rule.hardFloor).toBe(rule.tab === "catastrophic-floor");
+    }
+    expect(ruleRegistry().filter((rule) => rule.hardFloor).map((rule) => rule.id)).toEqual(
+      HARD_FLOOR_IDS,
+    );
+  });
+
+  test("rules group into the three customization tabs", () => {
+    const idsByTab = (tab: string) =>
+      ruleRegistry().filter((rule) => rule.tab === tab).map((rule) => rule.id);
+    expect(idsByTab("catastrophic-floor")).toEqual(HARD_FLOOR_IDS);
+    expect(idsByTab("prompt-classes")).toEqual(["recursive-cleanup", "force-push", "opaque-interpreter"]);
+    expect(idsByTab("path-policy")).toEqual(["credential-write", "instruction-write", "instruction-access"]);
+  });
+});
+
+describe("ruleInfo", () => {
+  test("finds registered ids", () => {
+    for (const id of EXPECTED_IDS) {
+      expect(ruleInfo(id)?.id).toBe(id);
+    }
+  });
+
+  test("returns undefined for unknown ids", () => {
+    expect(ruleInfo("no-such-rule")).toBeUndefined();
+  });
+});
+
+describe("operator toggles", () => {
+  /** Fresh config path under a temp home, so no test touches the real one. */
+  function freshConfigPath(): string {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-os-custom-"));
+    return path.join(dir, ".omp", "agent", "pi-os-sandbox.json");
+  }
+
+  test("loadDisabledRules defaults to empty when the config is missing", () => {
+    expect(loadDisabledRules(freshConfigPath())).toEqual(new Set());
+  });
+
+  test("saveDisabledRules merges into the existing operator config", () => {
+    const configPath = freshConfigPath();
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, JSON.stringify({ safetyRoots: ["/keep"] }), "utf8");
+
+    saveDisabledRules(new Set(["force-push"]), configPath);
+
+    const raw = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    expect(raw).toEqual({ safetyRoots: ["/keep"], disabledRules: ["force-push"] });
+    expect(loadDisabledRules(configPath)).toEqual(new Set(["force-push"]));
+  });
+
+  test("disabled rules round-trip through save and load", () => {
+    const configPath = freshConfigPath();
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    saveDisabledRules(new Set(["root-deletion", "credential-write"]), configPath);
+    expect(loadDisabledRules(configPath)).toEqual(new Set(["root-deletion", "credential-write"]));
+  });
+
+  test("loadDisabledRules tolerates a malformed config", () => {
+    const configPath = freshConfigPath();
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(configPath, "{not json", "utf8");
+    expect(loadDisabledRules(configPath)).toEqual(new Set());
+  });
+
+  test("loadDisabledRules keeps only string entries", () => {
+    const configPath = freshConfigPath();
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({ disabledRules: ["force-push", 42, null] }),
+      "utf8",
+    );
+    expect(loadDisabledRules(configPath)).toEqual(new Set(["force-push"]));
+  });
+
+  test("saveDisabledRules overwrites the disabled list but keeps other keys", () => {
+    const configPath = freshConfigPath();
+    fs.mkdirSync(path.dirname(configPath), { recursive: true });
+    saveDisabledRules(new Set(["force-push"]), configPath);
+    saveDisabledRules(new Set(["root-deletion"]), configPath);
+    expect(loadDisabledRules(configPath)).toEqual(new Set(["root-deletion"]));
+    expect(JSON.parse(fs.readFileSync(configPath, "utf8"))).toEqual({
+      disabledRules: ["root-deletion"],
+    });
+  });
+});
