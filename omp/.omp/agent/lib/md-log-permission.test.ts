@@ -4,7 +4,7 @@
 // no-vault cwd, append notify-once + recovery, cross-vault containment, and
 // restore falling back to the stored vaultRoot for moved sessions.
 import assert from "node:assert/strict";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
@@ -12,6 +12,10 @@ import { discoverVaultRoot } from "./path-guard";
 import registerMdLog from "../extensions/md-log";
 
 const tmp = mkdtempSync(path.join(tmpdir(), "mdlog-perm-"));
+const agentDir = path.join(tmp, "agent");
+mkdirSync(agentDir, { recursive: true });
+// Route md-log.json writes to the temp agent dir, never the real ~/.omp/agent.
+process.env.PI_CODING_AGENT_DIR = agentDir;
 const vault = path.join(tmp, "Vault");
 const vault2 = path.join(tmp, "Vault2");
 mkdirSync(path.join(vault, ".obsidian"), { recursive: true });
@@ -25,18 +29,24 @@ mkdirSync(noVault, { recursive: true });
 
 type Handler = (event?: unknown, ctx?: unknown) => Promise<void> | void;
 
+type CommandDef = {
+  handler: (args: string, ctx: unknown) => Promise<void>;
+  getArgumentCompletions?: (prefix: string) => Array<{ label: string; value: string; description?: string }> | null;
+};
+
 function harness() {
   const handlers: Record<string, Handler> = {};
   const notifies: string[] = [];
   let stored: string | null = null;
   let serial = 0;
   const fired: Array<{ id: string; message: unknown }> = [];
+  let commandDef: CommandDef | null = null;
   let handler: (args: string, ctx: unknown) => Promise<void> = async () => {};
   // Test mock: the harness types are far broader than the registration
   // surface this test exercises, so cast past ExtensionAPI.
   const pi = {
     on: (event: string, cb: Handler) => { handlers[event] = cb; },
-    registerCommand: (_name: string, def: { handler: (args: string, ctx: unknown) => Promise<void> }) => { handler = def.handler; },
+    registerCommand: (_name: string, def: CommandDef) => { commandDef = def; handler = def.handler; },
     registerTool: () => {},
     appendEntry: (_type: string, data: string) => { stored = data; },
     logger: { error: () => {} },
@@ -62,7 +72,8 @@ function harness() {
   // The extension exposes session_shutdown as "await the write queue"; use it
   // to drain enqueued appends deterministically instead of guessing a delay.
   const drain = async () => { await handlers["session_shutdown"]!(); };
-  return { handlers, notifies, handler, ctx, userMessage, drain };
+  const setStored = (data: string | null) => { stored = data; };
+  return { handlers, notifies, handler, commandDef, ctx, userMessage, drain, setStored };
 }
 
 // 1. Normal discovery
@@ -179,5 +190,72 @@ try {
   assert.match(readFileSync(note, "utf8"), /moved-session/);
 }
 
+// 11. vault set rejects a non-vault path and writes nothing
+{
+  const h = harness();
+  await h.handler(`vault set "${noVault}"`, h.ctx(noVault));
+  assert.match(h.notifies[0], /is not inside an Obsidian vault/);
+  assert.equal(existsSync(path.join(agentDir, "md-log.json")), false);
+}
+
+// 12. vault set: real vault -> canonical root persisted
+{
+  const h = harness();
+  await h.handler(`vault set "${vault}"`, h.ctx(noVault));
+  assert.match(h.notifies[0], /default vault set to .*Vault$/);
+  const saved = JSON.parse(readFileSync(path.join(agentDir, "md-log.json"), "utf8")) as Record<string, unknown>;
+  assert.equal(saved.version, 1);
+  assert.equal(saved.vaultRoot, realpathSync(vault));
+}
+
+// 13. vault (no verb) shows the configured vault
+{
+  const h = harness();
+  await h.handler("vault", h.ctx(noVault));
+  assert.match(h.notifies[0], /default vault .*Vault/);
+}
+
+// 14. vault clear removes the configured vault
+{
+  const h = harness();
+  await h.handler("vault clear", h.ctx(noVault));
+  assert.match(h.notifies[0], /default vault cleared/);
+  const saved = JSON.parse(readFileSync(path.join(agentDir, "md-log.json"), "utf8")) as Record<string, unknown>;
+  assert.equal(saved.vaultRoot, undefined);
+}
+
+// 15. status shows the binding
+{
+  const h = harness();
+  await h.handler(JSON.stringify(note), h.ctx(noVault));
+  h.notifies.length = 0;
+  await h.handler("status", h.ctx(noVault));
+  assert.match(h.notifies[0], /bound: .*chat\.md/);
+}
+
+// 16. tab completions: top level, vault subcommands, and misses
+{
+  const h = harness();
+  const completions = h.commandDef!.getArgumentCompletions!;
+  assert.deepEqual(completions("").map((item) => item.label), ["vault", "status"]);
+  assert.deepEqual(completions("vault ").map((item) => item.label), ["set", "clear"]);
+  assert.deepEqual(completions("vault s").map((item) => item.label), ["set"]);
+  assert.equal(completions("vault set /path"), null);
+  assert.equal(completions("bogus"), null);
+}
+
+// 17. Restore falls back to the configured vault when the session state
+//     predates vaultRoot (bound before the field existed)
+{
+  const h = harness();
+  await h.handler(`vault set "${vault}"`, h.ctx(noVault));
+  h.setStored(JSON.stringify({ version: 1, boundPath: note, cursor: 0, seenIds: [], sessionId: "test-session" }));
+  await h.handlers["session_switch"]!({}, h.ctx(noVault));
+  h.handlers["message_end"]!(h.userMessage("config-fallback"), h.ctx(noVault));
+  await h.drain();
+  assert.match(readFileSync(note, "utf8"), /config-fallback/);
+}
+
+delete process.env.PI_CODING_AGENT_DIR;
 rmSync(tmp, { recursive: true, force: true });
 console.log("md-log permission checks: all passed");

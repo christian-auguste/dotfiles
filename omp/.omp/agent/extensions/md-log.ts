@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
+import type { AutocompleteItem } from "@oh-my-pi/pi-tui";
 import { normalizeMessage, normalizeToolCall, normalizeToolResult, type MdLogEvent } from "../lib/event-model";
 import { appendLogBlock, ensureMarkdownFile, fileExists, findFrontMatterTarget, MARKER_KEY, readMarker, readText, upsertFrontMatter, writeArtifact } from "../lib/log-file";
+import { readConfig, writeConfig } from "../lib/md-log-config";
 import { renderCallout } from "../lib/log-renderer";
 import { canonicalize, discoverVaultRoot, resolveBoundPath } from "../lib/path-guard";
 import { emptyState, MD_LOG_STATE_TYPE, pushSeen, reconstructState, serializeState, type MdLogState } from "../lib/session-state";
@@ -29,7 +31,9 @@ export default function registerMdLog(pi: ExtensionAPI): void {
     state = reconstructState(branch(ctx)) ?? emptyState(sessionId(ctx));
     state.sessionId = sessionId(ctx);
     const discovery = discoverVaultRoot(ctx.cwd);
-    vaultRoot = discovery.ok ? discovery.root : state.vaultRoot ?? null;
+    // cwd discovery wins; then the session's own root (bound when the vault
+    // was resolved from the note path); then the user-configured default.
+    vaultRoot = discovery.ok ? discovery.root : state.vaultRoot ?? (await readConfig()).vaultRoot ?? null;
     if (!state.boundPath) return;
     const marker = await readMarker(state.boundPath);
     if (state.logId && marker !== state.logId) {
@@ -91,6 +95,48 @@ export default function registerMdLog(pi: ExtensionAPI): void {
     return count;
   }
 
+  async function showStatus(ctx: ExtensionContext): Promise<void> {
+    await restore(ctx);
+    const config = await readConfig();
+    ctx.ui.notify(
+      [
+        state?.boundPath ? `bound: ${state.boundPath}` : "bound: none",
+        `events: ${state?.cursor ?? 0}`,
+        `vault: ${vaultRoot ?? "unknown"}`,
+        `configured vault: ${config.vaultRoot ?? "none"}`,
+      ].join("\n"),
+      "info",
+    );
+  }
+
+  async function showVaultConfig(ctx: ExtensionContext): Promise<void> {
+    const config = await readConfig();
+    if (!config.vaultRoot) { ctx.ui.notify("md-log: no default vault configured. Run: /md-log vault set \"/abs/path\".", "info"); return; }
+    const discovery = discoverVaultRoot(config.vaultRoot);
+    if (discovery.ok) ctx.ui.notify(`md-log: default vault ${discovery.root}`, "info");
+    else if (discovery.error === "denied") ctx.ui.notify(permissionMessage(discovery.at), "error");
+    else ctx.ui.notify(`md-log: configured vault ${config.vaultRoot} no longer exists; run /md-log vault set <path>.`, "warning");
+  }
+
+  async function setVaultConfig(target: string, ctx: ExtensionContext): Promise<void> {
+    let requested = target.trim();
+    if ((requested.startsWith('"') && requested.endsWith('"')) || (requested.startsWith("'") && requested.endsWith("'"))) requested = requested.slice(1, -1);
+    if (!requested || requested.startsWith("~") || !path.isAbsolute(requested)) { ctx.ui.notify("md-log vault set requires an absolute path.", "error"); return; }
+    const discovery = discoverVaultRoot(requested);
+    if (!discovery.ok) {
+      if (discovery.error === "denied") ctx.ui.notify(permissionMessage(discovery.at), "error");
+      else ctx.ui.notify(`md-log: ${requested} is not inside an Obsidian vault.`, "error");
+      return;
+    }
+    try {
+      await writeConfig({ version: 1, vaultRoot: discovery.root });
+    } catch (error) {
+      ctx.ui.notify(`md-log: could not save config: ${String(error)}`, "error");
+      return;
+    }
+    ctx.ui.notify(`md-log: default vault set to ${discovery.root}`, "info");
+  }
+
   pi.on("session_start", async (_event, ctx) => { await restore(ctx); await backfill(ctx); });
   pi.on("session_switch", async (_event, ctx) => { await restore(ctx); await backfill(ctx); });
   pi.on("session_branch", async (_event, ctx) => { await restore(ctx); await backfill(ctx); });
@@ -106,9 +152,47 @@ export default function registerMdLog(pi: ExtensionAPI): void {
   pi.on("session_shutdown", async () => { await queue; });
 
   pi.registerCommand("md-log", {
-    description: "Bind this session to an Obsidian Markdown note",
+    description: "Bind to an Obsidian note; configure the vault (vault set/clear, status)",
+    getArgumentCompletions(argumentPrefix: string): AutocompleteItem[] | null {
+      const trimmed = argumentPrefix.trim();
+      const tokens = trimmed ? trimmed.split(/\s+/) : [];
+      const afterVault = tokens[0] === "vault" && (tokens.length === 2 || (tokens.length === 1 && argumentPrefix.endsWith(" ")));
+      if (afterVault) {
+        const subs = [
+          { label: "set", value: "set ", description: "Set the default vault to an absolute path" },
+          { label: "clear", value: "clear", description: "Remove the configured default vault" },
+        ];
+        const filtered = subs.filter((item) => item.label.startsWith(tokens[1] ?? ""));
+        return filtered.length ? filtered : null;
+      }
+      if (tokens.length <= 1) {
+        const top = [
+          { label: "vault", value: "vault", description: "Show or change the default Obsidian vault" },
+          { label: "status", value: "status", description: "Show the binding, event count, and vault config" },
+        ];
+        const filtered = top.filter((item) => item.label.startsWith(trimmed));
+        return filtered.length ? filtered : null;
+      }
+      return null;
+    },
     handler: async (args, ctx) => {
-      let requested = args.trim();
+      const input = args.trim();
+      const sub = input ? input.split(/\s+/)[0] : "";
+      if (!input || sub === "status") { await showStatus(ctx); return; }
+      if (sub === "vault") {
+        const rest = input.slice(sub.length).trim();
+        const verb = rest.split(/\s+/)[0] ?? "";
+        if (!verb) { await showVaultConfig(ctx); return; }
+        if (verb === "clear") {
+          try { await writeConfig({ version: 1 }); } catch (error) { ctx.ui.notify(`md-log: could not save config: ${String(error)}`, "error"); return; }
+          ctx.ui.notify("md-log: default vault cleared.", "info");
+          return;
+        }
+        if (verb === "set") { await setVaultConfig(rest.slice(verb.length).trim(), ctx); return; }
+        ctx.ui.notify(`md-log: unknown vault command "${verb}". Try: vault set <path> | vault clear.`, "error");
+        return;
+      }
+      let requested = input;
       if ((requested.startsWith('"') && requested.endsWith('"')) || (requested.startsWith("'") && requested.endsWith("'"))) requested = requested.slice(1, -1);
       if (!requested || requested.startsWith("~") || !path.isAbsolute(requested)) { ctx.ui.notify("md-log requires an absolute path.", "error"); return; }
       // The absolute note path names the vault, so binding works from any cwd
