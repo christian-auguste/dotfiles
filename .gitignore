@@ -20,6 +20,7 @@ pi/.pi/agent/sessions/
 pi/.pi/agent/sessions-archive/
 pi/.pi/agent/steering-selection.json
 pi/.pi/agent/ollama-autostart.log
+pi/.pi/ollama-autostart.log
 pi/.pi/agent/web-search-cache/
 pi/.pi/knowledge-search/
 pi/.pi/memory/
