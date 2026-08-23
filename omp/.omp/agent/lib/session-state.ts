@@ -8,6 +8,9 @@ export interface MdLogState {
   seenIds: string[];
   sessionId: string;
   logId?: string;
+  /** Canonical vault root resolved at bind; lets restore find the vault from
+   * any cwd (e.g. a session moved to ~/.omp/agent for LSP work). */
+  vaultRoot?: string;
 }
 
 export function emptyState(sessionId: string): MdLogState {
@@ -28,6 +31,7 @@ export function parseState(raw: unknown): MdLogState | null {
       seenIds: Array.isArray(value.seenIds) ? value.seenIds.filter((x): x is string => typeof x === "string") : [],
       sessionId: value.sessionId,
       logId: typeof value.logId === "string" ? value.logId : undefined,
+      vaultRoot: typeof value.vaultRoot === "string" ? value.vaultRoot : undefined,
     };
   } catch { return null; }
 }

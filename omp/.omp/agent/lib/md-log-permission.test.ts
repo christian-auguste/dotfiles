@@ -1,7 +1,8 @@
-// Behavioral check for the md-log TCC/permission fixes.
+// Behavioral check for the md-log TCC/permission fixes and vault discovery.
 // Run: bun lib/md-log-permission.test.ts
-// Covers: discovery denied-vs-not-found, /md-log error rendering, bind,
-// append notify-once + recovery, and the append-time vault containment check.
+// Covers: discovery denied-vs-not-found, /md-log error rendering, bind from a
+// no-vault cwd, append notify-once + recovery, cross-vault containment, and
+// restore falling back to the stored vaultRoot for moved sessions.
 import assert from "node:assert/strict";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -84,30 +85,33 @@ try {
   assert.deepEqual(found, { ok: false, error: "not-found" });
 }
 
-// 4. /md-log from a denied cwd -> permission message, not the vault-not-found one
+// 4. /md-log with a note path inside a denied dir -> permission message,
+//    not the vault-not-found one. cwd is irrelevant now.
 {
   const h = harness();
+  const deniedNote = path.join(denied, "inner", "note.md");
   chmodSync(denied, 0o000);
   try {
-    await h.handler(JSON.stringify(note), h.ctx(path.join(denied, "inner")));
+    await h.handler(JSON.stringify(deniedNote), h.ctx(noVault));
   } finally { chmodSync(denied, 0o755); }
   assert.equal(h.notifies.length, 1);
   assert.match(h.notifies[0], /permission denied accessing/);
   assert.doesNotMatch(h.notifies[0], /could not find an Obsidian vault/);
 }
 
-// 5. /md-log from a no-vault cwd -> existing not-found message
+// 5. /md-log with a note path outside any vault -> existing not-found message
 {
   const h = harness();
-  await h.handler(JSON.stringify(note), h.ctx(noVault));
+  await h.handler(JSON.stringify(path.join(noVault, "note.md")), h.ctx(vault));
   assert.equal(h.notifies.length, 1);
   assert.match(h.notifies[0], /could not find an Obsidian vault/);
 }
 
-// 6. Normal bind from inside the vault -> success, note created with marker
+// 6. Bind from a cwd with no vault above it -> still succeeds, because the
+//    vault is discovered from the note path, not the cwd
 {
   const h = harness();
-  await h.handler(JSON.stringify(note), h.ctx(vault));
+  await h.handler(JSON.stringify(note), h.ctx(noVault));
   assert.equal(h.notifies.length, 1);
   assert.match(h.notifies[0], /bound to .*chat\.md/);
   assert.match(readFileSync(note, "utf8"), /^omp-md-log: [0-9a-f-]{36}$/m);
@@ -161,6 +165,18 @@ try {
   h.handlers["message_end"]!(h.userMessage("escaped"), h.ctx(vault2));
   await h.drain();
   assert.equal(readFileSync(note, "utf8"), before);
+}
+
+// 10. Restore fallback: session moved to a cwd with no vault above it still
+//     appends, because restore falls back to the stored vaultRoot
+{
+  const h = harness();
+  await h.handler(JSON.stringify(note), h.ctx(vault));
+  h.notifies.length = 0;
+  await h.handlers["session_switch"]!({}, h.ctx(noVault));
+  h.handlers["message_end"]!(h.userMessage("moved-session"), h.ctx(noVault));
+  await h.drain();
+  assert.match(readFileSync(note, "utf8"), /moved-session/);
 }
 
 rmSync(tmp, { recursive: true, force: true });

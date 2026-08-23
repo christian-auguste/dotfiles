@@ -26,10 +26,10 @@ export default function registerMdLog(pi: ExtensionAPI): void {
   const enqueue = (work: () => Promise<void>) => { queue = queue.then(work).catch((error) => pi.logger.error(`[md-log] ${String(error)}`)); };
 
   async function restore(ctx: ExtensionContext): Promise<void> {
-    const discovery = discoverVaultRoot(ctx.cwd);
-    vaultRoot = discovery.ok ? discovery.root : null;
     state = reconstructState(branch(ctx)) ?? emptyState(sessionId(ctx));
     state.sessionId = sessionId(ctx);
+    const discovery = discoverVaultRoot(ctx.cwd);
+    vaultRoot = discovery.ok ? discovery.root : state.vaultRoot ?? null;
     if (!state.boundPath) return;
     const marker = await readMarker(state.boundPath);
     if (state.logId && marker !== state.logId) {
@@ -111,7 +111,9 @@ export default function registerMdLog(pi: ExtensionAPI): void {
       let requested = args.trim();
       if ((requested.startsWith('"') && requested.endsWith('"')) || (requested.startsWith("'") && requested.endsWith("'"))) requested = requested.slice(1, -1);
       if (!requested || requested.startsWith("~") || !path.isAbsolute(requested)) { ctx.ui.notify("md-log requires an absolute path.", "error"); return; }
-      const discovery = discoverVaultRoot(ctx.cwd);
+      // The absolute note path names the vault, so binding works from any cwd
+      // (e.g. a session in ~/.omp/agent for LSP work).
+      const discovery = discoverVaultRoot(path.dirname(requested));
       if (!discovery.ok) {
         if (discovery.error === "denied") ctx.ui.notify(permissionMessage(discovery.at), "error");
         else ctx.ui.notify("md-log could not find an Obsidian vault.", "error");
@@ -133,7 +135,7 @@ export default function registerMdLog(pi: ExtensionAPI): void {
         return;
       }
       appendErrorNotified = false;
-      state = { version: 1, boundPath: resolved.path, cursor: same ? state?.cursor ?? 0 : 0, seenIds: same ? state?.seenIds ?? [] : [], sessionId: sessionId(ctx), logId: marker };
+      state = { version: 1, boundPath: resolved.path, cursor: same ? state?.cursor ?? 0 : 0, seenIds: same ? state?.seenIds ?? [] : [], sessionId: sessionId(ctx), logId: marker, vaultRoot };
       persist();
       const count = await backfill(ctx);
       ctx.ui.notify(`md-log: bound to ${resolved.path} (${count} events backfilled)`, "info");
