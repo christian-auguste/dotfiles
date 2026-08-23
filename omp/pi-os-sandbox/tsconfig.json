@@ -12,7 +12,8 @@
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
     "paths": {
-      "@oh-my-pi/pi-coding-agent": ["../.omp/agent/node_modules/@oh-my-pi/pi-coding-agent/dist/types/index.d.ts"]
+      "@oh-my-pi/pi-coding-agent": ["../.omp/agent/node_modules/@oh-my-pi/pi-coding-agent/dist/types/index.d.ts"],
+      "@earendil-works/pi-coding-agent": ["/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"]
     }
   },
   "include": ["src", "extensions", "test"]
