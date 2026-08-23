@@ -1,12 +1,24 @@
-import { existsSync, realpathSync } from "node:fs";
+import { realpathSync, statSync } from "node:fs";
 import path from "node:path";
 
-export function discoverVaultRoot(cwd: string): string | null {
+export type VaultDiscovery =
+  | { ok: true; root: string }
+  | { ok: false; error: "denied"; at: string }
+  | { ok: false; error: "not-found" };
+
+export function discoverVaultRoot(cwd: string): VaultDiscovery {
   let dir = path.resolve(cwd);
   for (;;) {
-    if (existsSync(path.join(dir, ".obsidian"))) return canonicalize(dir);
+    try {
+      if (statSync(path.join(dir, ".obsidian")).isDirectory()) return { ok: true, root: canonicalize(dir) };
+    } catch (error) {
+      // statSync throws on EPERM/EACCES where existsSync would swallow it, so a
+      // TCC denial is distinguishable from "no .obsidian anywhere above" (ENOENT).
+      const code = (error as NodeJS.ErrnoException).code;
+      if (code === "EPERM" || code === "EACCES") return { ok: false, error: "denied", at: dir };
+    }
     const parent = path.dirname(dir);
-    if (parent === dir) return null;
+    if (parent === dir) return { ok: false, error: "not-found" };
     dir = parent;
   }
 }
@@ -42,6 +54,4 @@ export function resolveBoundPath(vaultRoot: string, requested: string): { path: 
   return { path: target };
 }
 
-export function assertExactBoundPath(bound: string, current: string): boolean {
-  return canonicalize(bound) === canonicalize(current);
-}
+

@@ -4,7 +4,7 @@ import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import { normalizeMessage, normalizeToolCall, normalizeToolResult, type MdLogEvent } from "../lib/event-model";
 import { appendLogBlock, ensureMarkdownFile, fileExists, findFrontMatterTarget, MARKER_KEY, readMarker, readText, upsertFrontMatter, writeArtifact } from "../lib/log-file";
 import { renderCallout } from "../lib/log-renderer";
-import { assertExactBoundPath, canonicalize, discoverVaultRoot, resolveBoundPath } from "../lib/path-guard";
+import { canonicalize, discoverVaultRoot, resolveBoundPath } from "../lib/path-guard";
 import { emptyState, MD_LOG_STATE_TYPE, pushSeen, reconstructState, serializeState, type MdLogState } from "../lib/session-state";
 
 type Entry = { type: string; id: string; message?: unknown; customType?: string; data?: unknown };
@@ -12,14 +12,22 @@ type Entry = { type: string; id: string; message?: unknown; customType?: string;
 export default function registerMdLog(pi: ExtensionAPI): void {
   let state: MdLogState | null = null;
   let vaultRoot: string | null = null;
+  let appendErrorNotified = false;
   let queue: Promise<void> = Promise.resolve();
+  const permissionMessage = (target: string) =>
+    `md-log: permission denied accessing ${target}; grant the terminal Files & Folders access in System Settings > Privacy & Security`;
+  const isPermissionError = (error: unknown) => {
+    const code = (error as NodeJS.ErrnoException).code;
+    return code === "EPERM" || code === "EACCES";
+  };
   const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
   const branch = (ctx: ExtensionContext) => ctx.sessionManager.getBranch() as unknown as Entry[];
   const persist = () => { if (state) pi.appendEntry(MD_LOG_STATE_TYPE, serializeState(state)); };
   const enqueue = (work: () => Promise<void>) => { queue = queue.then(work).catch((error) => pi.logger.error(`[md-log] ${String(error)}`)); };
 
   async function restore(ctx: ExtensionContext): Promise<void> {
-    vaultRoot = discoverVaultRoot(ctx.cwd);
+    const discovery = discoverVaultRoot(ctx.cwd);
+    vaultRoot = discovery.ok ? discovery.root : null;
     state = reconstructState(branch(ctx)) ?? emptyState(sessionId(ctx));
     state.sessionId = sessionId(ctx);
     if (!state.boundPath) return;
@@ -44,14 +52,26 @@ export default function registerMdLog(pi: ExtensionAPI): void {
 
   async function append(ctx: ExtensionContext, event: MdLogEvent): Promise<void> {
     if (!state?.boundPath || state.seenIds.includes(event.id)) return;
-    if (!assertExactBoundPath(state.boundPath, state.boundPath)) return;
-    if (event.kind === "artifact") {
-      if (!vaultRoot) return;
-      const embedPath = await writeArtifact(vaultRoot, sessionId(ctx), event.name, event.content);
-      if (!embedPath) return;
-      event = { ...event, embedPath };
+    // Real containment check: the old assertExactBoundPath(boundPath, boundPath)
+    // compared a path with itself and never failed. Reuse the bind-time bouncer.
+    if (vaultRoot && resolveBoundPath(vaultRoot, state.boundPath).error) return;
+    try {
+      if (event.kind === "artifact") {
+        if (!vaultRoot) return;
+        const embedPath = await writeArtifact(vaultRoot, sessionId(ctx), event.name, event.content);
+        if (!embedPath) return;
+        event = { ...event, embedPath };
+      }
+      await appendLogBlock(state.boundPath, renderCallout(event));
+    } catch (error) {
+      if (!isPermissionError(error)) throw error;
+      if (!appendErrorNotified) {
+        appendErrorNotified = true;
+        ctx.ui.notify(permissionMessage(state.boundPath), "error");
+      }
+      return; // entry stays unseen; next backfill retries once access is granted
     }
-    await appendLogBlock(state.boundPath, renderCallout(event));
+    appendErrorNotified = false;
     state.seenIds = pushSeen(state.seenIds, event.id);
     state.cursor++;
     persist();
@@ -91,14 +111,28 @@ export default function registerMdLog(pi: ExtensionAPI): void {
       let requested = args.trim();
       if ((requested.startsWith('"') && requested.endsWith('"')) || (requested.startsWith("'") && requested.endsWith("'"))) requested = requested.slice(1, -1);
       if (!requested || requested.startsWith("~") || !path.isAbsolute(requested)) { ctx.ui.notify("md-log requires an absolute path.", "error"); return; }
-      vaultRoot = discoverVaultRoot(ctx.cwd);
-      if (!vaultRoot) { ctx.ui.notify("md-log could not find an Obsidian vault.", "error"); return; }
+      const discovery = discoverVaultRoot(ctx.cwd);
+      if (!discovery.ok) {
+        if (discovery.error === "denied") ctx.ui.notify(permissionMessage(discovery.at), "error");
+        else ctx.ui.notify("md-log could not find an Obsidian vault.", "error");
+        return;
+      }
+      vaultRoot = discovery.root;
       const resolved = resolveBoundPath(vaultRoot, requested);
       if (resolved.error) { ctx.ui.notify(resolved.error, "error"); return; }
-      await ensureMarkdownFile(resolved.path);
-      const marker = (await readMarker(resolved.path)) ?? randomUUID();
-      const same = state?.boundPath ? canonicalize(state.boundPath) === canonicalize(resolved.path) : false;
-      await upsertFrontMatter(resolved.path, { Date: new Date().toISOString().slice(0, 10), Time: new Date().toTimeString().slice(0, 5), [MARKER_KEY]: marker });
+      let marker: string;
+      let same: boolean;
+      try {
+        await ensureMarkdownFile(resolved.path);
+        marker = (await readMarker(resolved.path)) ?? randomUUID();
+        same = state?.boundPath ? canonicalize(state.boundPath) === canonicalize(resolved.path) : false;
+        await upsertFrontMatter(resolved.path, { Date: new Date().toISOString().slice(0, 10), Time: new Date().toTimeString().slice(0, 5), [MARKER_KEY]: marker });
+      } catch (error) {
+        if (!isPermissionError(error)) throw error;
+        ctx.ui.notify(permissionMessage(resolved.path), "error");
+        return;
+      }
+      appendErrorNotified = false;
       state = { version: 1, boundPath: resolved.path, cursor: same ? state?.cursor ?? 0 : 0, seenIds: same ? state?.seenIds ?? [] : [], sessionId: sessionId(ctx), logId: marker };
       persist();
       const count = await backfill(ctx);
