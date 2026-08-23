@@ -1,6 +1,6 @@
 /**
- * @fileoverview Operator sandbox configuration: default roots, metadata deny
- * targets, and strict validation of the optional config file.
+ * @fileoverview Operator sandbox configuration: default roots, blocked
+ * metadata targets, and strict validation of the optional config file.
  */
 
 import { homedir } from "node:os";
@@ -17,8 +17,10 @@ export interface SandboxConfig {
   credentialRoots: string[];
   /** Paths the agent must read (instructions); writes are still blocked. */
   instructionRoots: string[];
-  /** Network targets that are deny-only (e.g. cloud metadata services). */
+  /** Network targets that are always blocked (e.g. cloud metadata services). */
   metadataHosts: RegExp[];
+  /** Rule ids the operator disabled; those rules allow instead of blocking or prompting. */
+  disabledRules: string[];
 }
 
 export function defaultConfig(): SandboxConfig {
@@ -46,6 +48,7 @@ export function defaultConfig(): SandboxConfig {
       /100\.100\.100\.200/,
       /metadata\.google\.internal/,
     ],
+    disabledRules: [],
   };
 }
 
@@ -84,5 +87,6 @@ export function loadConfig(raw: unknown): SandboxConfig {
   if ("credentialRoots" in input) cfg.credentialRoots = parseRootList("credentialRoots", input.credentialRoots);
   if ("instructionRoots" in input) cfg.instructionRoots = parseRootList("instructionRoots", input.instructionRoots);
   if ("metadataHosts" in input) cfg.metadataHosts = parseMetadataHosts(input.metadataHosts);
+  if ("disabledRules" in input) cfg.disabledRules = parseRootList("disabledRules", input.disabledRules);
   return cfg;
 }

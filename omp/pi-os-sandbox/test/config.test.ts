@@ -43,6 +43,10 @@ describe("defaultConfig", () => {
     }
     expect(metadataHosts.some((r) => r.test("example.com"))).toBe(false);
   });
+
+  test("disabledRules default to an empty list", () => {
+    expect(defaultConfig().disabledRules).toEqual([]);
+  });
 });
 
 describe("loadConfig", () => {
@@ -73,6 +77,19 @@ describe("loadConfig", () => {
     expect(() => loadConfig({ instructionRoots: [""] })).toThrow();
   });
 
+  test("disabledRules parse as an array of strings, replacing defaults", () => {
+    const cfg = loadConfig({ disabledRules: ["root-deletion", "force-push"] });
+    expect(cfg.disabledRules).toEqual(["root-deletion", "force-push"]);
+    expect(cfg.safetyRoots).toEqual(defaultConfig().safetyRoots);
+    expect(loadConfig({}).disabledRules).toEqual([]);
+  });
+
+  test("invalid disabledRules throw", () => {
+    expect(() => loadConfig({ disabledRules: "x" })).toThrow();
+    expect(() => loadConfig({ disabledRules: [42] })).toThrow();
+    expect(() => loadConfig({ disabledRules: [""] })).toThrow();
+  });
+
   test("invalid regex source throws", () => {
     expect(() => loadConfig({ metadataHosts: ["["] })).toThrow(/metadataHosts/);
   });
@@ -92,9 +109,11 @@ describe("loadConfig", () => {
     cfg.safetyRoots.push("/mutated");
     cfg.credentialRoots[0] = "/mutated";
     cfg.metadataHosts.push(/mutated/);
+    cfg.disabledRules.push("force-push");
     expect(baseline.safetyRoots).not.toContain("/mutated");
     expect(baseline.credentialRoots[0]).not.toBe("/mutated");
     expect(baseline.metadataHosts).toHaveLength(5);
+    expect(baseline.disabledRules).toEqual([]);
     expect(defaultConfig()).toEqual(baseline);
   });
 });

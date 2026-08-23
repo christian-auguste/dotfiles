@@ -1,9 +1,13 @@
 /**
  * @fileoverview Shell and eval command classification against the destructive
- * safety floor, plus deny-only cloud metadata targets.
+ * safety floor, plus cloud metadata targets the sandbox always blocks.
  */
 
-export type GuardDecision = { action: "block" | "prompt"; reason: string } | null;
+import { ruleInfo } from "./customization";
+
+export type GuardDecision =
+  | { action: "block" | "prompt"; reason: string; rule: string; remediation: string }
+  | null;
 
 const EMPTY_QUOTES = /(["'])\1/g;
 const GIT_METADATA_COMMANDS: Record<string, true> = {
@@ -17,6 +21,11 @@ const GIT_METADATA_COMMANDS: Record<string, true> = {
 };
 const PROTECTED_REFS: Record<string, true> = { main: true, master: true, trunk: true, mainline: true };
 const METADATA_FETCH = /\b(?:curl|wget|fetch|python3?|urllib|requests)\b|\bnode\s+fetch\b/i;
+
+/** Builds a decision carrying the stable rule id and its registry remediation. */
+function verdict(action: "block" | "prompt", rule: string, reason: string): GuardDecision {
+  return { action, reason, rule, remediation: ruleInfo(rule)?.remediation ?? "" };
+}
 
 function basename(value: string): string {
   const parts = value.split("/");
@@ -137,41 +146,43 @@ function isMetadataTarget(value: string, metadataHosts: RegExp[]): boolean {
 
 export function classifyCommand(command: string, metadataHosts: RegExp[]): GuardDecision {
   const normalized = normalize(command);
-  if (!normalized) return { action: "block", reason: "Blocked: the shell command was empty or could not be verified." };
-  if (isRootDeletion(unquotedWords(normalized))) return { action: "block", reason: "Blocked: recursive deletion of the filesystem root." };
-  if (isSystemDestruction(normalized)) return { action: "block", reason: "Blocked: system shutdown or process-destruction command." };
-  if (isDeviceDestruction(normalized)) return { action: "block", reason: "Blocked: disk or device destruction command." };
-  if (isFetchToShell(normalized)) return { action: "block", reason: "Blocked: downloading code and executing it as a shell command." };
-  if (isMetadataTarget(normalized, metadataHosts)) return { action: "block", reason: "Blocked: command targets a cloud metadata service." };
-  if (isCredentialRead(normalized)) return { action: "block", reason: "Blocked: command reads a private SSH credential path." };
-  if (isDatabaseDestruction(normalized)) return { action: "block", reason: "Blocked: database-wide destructive operation." };
+  if (!normalized) return verdict("block", "unverifiable-input", "Blocked: the shell command was empty or could not be verified.");
+  if (isRootDeletion(unquotedWords(normalized))) return verdict("block", "root-deletion", "Blocked: recursive deletion of the filesystem root.");
+  if (isSystemDestruction(normalized)) return verdict("block", "system-destruction", "Blocked: system shutdown or process-destruction command.");
+  if (isDeviceDestruction(normalized)) return verdict("block", "device-destruction", "Blocked: disk or device destruction command.");
+  if (isFetchToShell(normalized)) return verdict("block", "fetch-to-shell", "Blocked: downloading code and executing it as a shell command.");
+  if (isMetadataTarget(normalized, metadataHosts)) return verdict("block", "metadata-deny", "Blocked: command targets a cloud metadata service.");
+  if (isCredentialRead(normalized)) return verdict("block", "credential-read", "Blocked: command reads a private SSH credential path.");
+  if (isDatabaseDestruction(normalized)) return verdict("block", "database-destruction", "Blocked: database-wide destructive operation.");
 
   const commandSegments = segments(normalized);
   for (const segment of commandSegments) {
     const words = shellWords(segment);
-    if (isRootDeletion(words)) return { action: "block", reason: "Blocked: recursive deletion of the filesystem root." };
-    if (isProtectedGitPush(words)) return { action: "block", reason: "Blocked: destructive push targeting a protected Git ref." };
-    if (isOpaqueDestructive(segment)) return { action: "prompt", reason: "This command hides a potentially destructive operation inside an interpreter." };
+    if (isRootDeletion(words)) return verdict("block", "root-deletion", "Blocked: recursive deletion of the filesystem root.");
+    if (isProtectedGitPush(words)) return verdict("block", "force-push", "Blocked: destructive push targeting a protected Git ref.");
+    if (isOpaqueDestructive(segment)) return verdict("prompt", "opaque-interpreter", "This command hides a potentially destructive operation inside an interpreter.");
   }
 
   if (commandSegments.some((segment) => isRecursiveWork(shellWords(segment)))) {
-    return { action: "prompt", reason: "This recursive or destructive developer operation needs exact approval." };
+    return verdict("prompt", "recursive-cleanup", "This recursive or destructive developer operation needs exact approval.");
   }
   if (/\bgit\s+push\b[\s\S]*\s(?:-f|--force|--force-with-lease)\b/i.test(normalized)) {
-    return { action: "prompt", reason: "This force push needs exact approval." };
+    return verdict("prompt", "force-push", "This force push needs exact approval.");
   }
   return null;
 }
 
 export function classifyEval(code: string, metadataHosts: RegExp[]): GuardDecision {
-  if (!code.trim()) return { action: "block", reason: "Blocked: the eval cell was empty or could not be verified." };
-  if (isRootDeletion(unquotedWords(code))) return { action: "block", reason: "Blocked: eval contains recursive deletion of the filesystem root." };
-  if (isSystemDestruction(code) || isDeviceDestruction(code) || isFetchToShell(code) || isDatabaseDestruction(code)) {
-    return { action: "block", reason: "Blocked: eval contains a catastrophic operation." };
-  }
-  if (isMetadataTarget(code, metadataHosts)) return { action: "block", reason: "Blocked: eval contains a cloud metadata service target." };
+  if (!code.trim()) return verdict("block", "unverifiable-input", "Blocked: the eval cell was empty or could not be verified.");
+  if (isRootDeletion(unquotedWords(code))) return verdict("block", "root-deletion", "Blocked: eval contains recursive deletion of the filesystem root.");
+  const catastrophic = "Blocked: eval contains a catastrophic operation.";
+  if (isSystemDestruction(code)) return verdict("block", "system-destruction", catastrophic);
+  if (isDeviceDestruction(code)) return verdict("block", "device-destruction", catastrophic);
+  if (isFetchToShell(code)) return verdict("block", "fetch-to-shell", catastrophic);
+  if (isDatabaseDestruction(code)) return verdict("block", "database-destruction", catastrophic);
+  if (isMetadataTarget(code, metadataHosts)) return verdict("block", "metadata-deny", "Blocked: eval contains a cloud metadata service target.");
   if (/\b(?:subprocess|child_process|Bun\.\$|shutil\.rmtree|os\.(?:remove|unlink)|fs\.(?:rm|rmSync|rmdir)|exec\(|spawn\(|unlink)\b/i.test(code)) {
-    return { action: "prompt", reason: "This eval cell can execute external commands or delete files." };
+    return verdict("prompt", "opaque-interpreter", "This eval cell can execute external commands or delete files.");
   }
   return null;
 }
