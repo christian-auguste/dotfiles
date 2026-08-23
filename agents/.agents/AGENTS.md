@@ -17,4 +17,4 @@
 
 ## Output style and Writing
 
-You MUST apply ~/.agents/skills/unslop/SKILL.md to all prose you generate (docs, READMEs, comments, and every message to the user throughout the session). Remove AI tells per that skill before final output.
+Before every response, read ~/.agents/skills/unslop/SKILL.md, then apply it to all prose you generate (docs, READMEs, comments, and every message to the user).
