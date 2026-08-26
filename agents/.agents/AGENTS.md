@@ -54,3 +54,15 @@ documentation, etc.)
 Resolves: #123
 See also: #456, #789
 ```
+
+## Example
+
+```
+feat(auth): Add token refresh on 401 response
+
+Sessions expired without retry, which forced users to sign in
+again. Retry once with a refreshed token before returning an
+error so active sessions survive expiry.
+
+Resolves: #123
+```
