@@ -78,8 +78,8 @@ describe("loadConfig", () => {
   });
 
   test("disabledRules parse as an array of strings, replacing defaults", () => {
-    const cfg = loadConfig({ disabledRules: ["root-deletion", "force-push"] });
-    expect(cfg.disabledRules).toEqual(["root-deletion", "force-push"]);
+    const cfg = loadConfig({ disabledRules: ["delete-filesystem-root", "force-push"] });
+    expect(cfg.disabledRules).toEqual(["delete-filesystem-root", "force-push"]);
     expect(cfg.safetyRoots).toEqual(defaultConfig().safetyRoots);
     expect(loadConfig({}).disabledRules).toEqual([]);
   });

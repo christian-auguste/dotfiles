@@ -46,10 +46,10 @@ function reasonOf(decision: Decision): string {
   return decision.reason;
 }
 
-/** Expected block decision: reason with rule and remediation lines, plus the fields. */
+/** Expected block decision: reason with rule and nextStep lines, plus the fields. */
 function blockOf(rule: string, reason: string): Decision {
-  const remediation = ruleInfo(rule)!.remediation;
-  return { action: "block", reason: `${reason} rule: ${rule} remediation: ${remediation}`, rule, remediation };
+  const nextStep = ruleInfo(rule)!.nextStep;
+  return { action: "block", reason: `${reason} rule: ${rule} nextStep: ${nextStep}`, rule, nextStep };
 }
 
 const HOME = os.homedir();
@@ -72,7 +72,7 @@ describe("inspectToolCall", () => {
         config: config(),
       });
       expect(decision.action).toBe("block");
-      expect(reasonOf(decision)).toContain("rule: root-deletion");
+      expect(reasonOf(decision)).toContain("rule: delete-filesystem-root");
     }
   });
 
@@ -95,7 +95,7 @@ describe("inspectToolCall", () => {
     expect(noGrants.action).toBe("block");
     expect(reasonOf(noGrants)).toContain("No interactive approval is available.");
     expect(reasonOf(noGrants)).toContain("An approval for this exact call would have allowed it.");
-    expect(reasonOf(noGrants)).toContain("rule: recursive-cleanup");
+    expect(reasonOf(noGrants)).toContain("rule: run-recursive-cleanup");
 
     const falseGrants = inspectToolCall("bash", { command }, cwd, {
       headless: true,
@@ -128,7 +128,7 @@ describe("inspectToolCall", () => {
         cwd,
         { headless, config: homeConfig },
       );
-      expect(decision).toEqual(blockOf("safety-state-access", "Blocked: the agent cannot modify or inspect protected safety state."));
+      expect(decision).toEqual(blockOf("access-sandbox-state", "Blocked: the agent cannot modify or inspect protected safety state."));
     }
 
     const gitMetadata = inspectToolCall(
@@ -153,7 +153,7 @@ describe("inspectToolCall", () => {
 
     const interactive = inspectToolCall("eval", { code }, cwd, { headless: false, ...opts });
     expect(interactive.action).toBe("prompt");
-    expect(reasonOf(interactive)).toContain("rule: opaque-interpreter");
+    expect(reasonOf(interactive)).toContain("rule: run-hidden-destructive-code");
 
     const headless = inspectToolCall("eval", { code }, cwd, { headless: true, ...opts });
     expect(headless.action).toBe("block");
@@ -176,7 +176,7 @@ describe("inspectToolCall", () => {
       cwd,
       { headless: true, config: homeConfig },
     );
-    expect(decision).toEqual(blockOf("safety-state-access", "Blocked: the agent cannot modify or inspect protected safety state."));
+    expect(decision).toEqual(blockOf("access-sandbox-state", "Blocked: the agent cannot modify or inspect protected safety state."));
   });
 
   test("blocks read/grep/glob of safety roots", () => {
@@ -187,7 +187,7 @@ describe("inspectToolCall", () => {
           headless,
           ...opts,
         });
-        expect(decision).toEqual(blockOf("safety-state-access", "Blocked: the agent cannot access protected safety state."));
+        expect(decision).toEqual(blockOf("access-sandbox-state", "Blocked: the agent cannot access protected safety state."));
       }
     }
   });
@@ -202,7 +202,7 @@ describe("inspectToolCall", () => {
     expect(interactive.action).toBe("prompt");
     expect(reasonOf(interactive)).toContain("Reading a protected credential path needs approval:");
     expect(reasonOf(interactive)).toContain("ssh");
-    expect(reasonOf(interactive)).toContain("rule: credential-read");
+    expect(reasonOf(interactive)).toContain("rule: read-credentials");
 
     const headless = inspectToolCall("read", { path: credentialFile }, cwd, {
       headless: true,
@@ -226,7 +226,7 @@ describe("inspectToolCall", () => {
           headless,
           config: config(),
         });
-        expect(safety).toEqual(blockOf("safety-state-access", "Blocked: the agent cannot access protected safety state."));
+        expect(safety).toEqual(blockOf("access-sandbox-state", "Blocked: the agent cannot access protected safety state."));
 
         const credential = inspectToolCall(
           toolName,
@@ -234,7 +234,7 @@ describe("inspectToolCall", () => {
           cwd,
           { headless, config: config() },
         );
-        expect(credential).toEqual(blockOf("credential-write", "Blocked: writing to a protected credential path."));
+        expect(credential).toEqual(blockOf("write-credentials", "Blocked: writing to a protected credential path."));
       }
     }
   });
@@ -256,7 +256,7 @@ describe("inspectToolCall", () => {
           headless,
           config: config(),
         });
-        expect(decision).toEqual(blockOf("instruction-write", "Blocked: writing to a protected instruction file."));
+        expect(decision).toEqual(blockOf("write-instruction-files", "Blocked: writing to a protected instruction file."));
       }
     }
   });
@@ -269,7 +269,7 @@ describe("inspectToolCall", () => {
         cwd,
         { headless, config: config() },
       );
-      expect(bashDecision).toEqual(blockOf("instruction-access", "Blocked: the agent cannot modify or inspect protected instruction files."));
+      expect(bashDecision).toEqual(blockOf("access-instruction-files", "Blocked: the agent cannot modify or inspect protected instruction files."));
     }
 
     const evalDecision = inspectToolCall(
@@ -296,7 +296,7 @@ describe("inspectToolCall", () => {
 
     const disabled = inspectToolCall("bash", { command }, cwd, {
       headless: true,
-      config: config({ disabledRules: ["recursive-cleanup"] }),
+      config: config({ disabledRules: ["run-recursive-cleanup"] }),
     });
     expect(disabled).toEqual({ action: "allow" });
 
@@ -308,7 +308,7 @@ describe("inspectToolCall", () => {
   });
 
   test("disabled path rules fall through without changing other rules", () => {
-    const cfg = config({ disabledRules: ["credential-write"] });
+    const cfg = config({ disabledRules: ["write-credentials"] });
 
     const write = inspectToolCall("write", { path: credentialFile, content: "x" }, cwd, {
       headless: true,
@@ -320,7 +320,7 @@ describe("inspectToolCall", () => {
       headless: true,
       config: cfg,
     });
-    expect(instruction).toEqual(blockOf("instruction-write", "Blocked: writing to a protected instruction file."));
+    expect(instruction).toEqual(blockOf("write-instruction-files", "Blocked: writing to a protected instruction file."));
 
     const safety = inspectToolCall("read", { path: safetyFile }, cwd, {
       headless: true,
@@ -329,28 +329,28 @@ describe("inspectToolCall", () => {
     expect(safety.action).toBe("block");
   });
 
-  test("disabling safety-state-access allows protected reads", () => {
+  test("disabling access-sandbox-state allows protected reads", () => {
     const decision = inspectToolCall("read", { path: safetyFile }, cwd, {
       headless: true,
-      config: config({ disabledRules: ["safety-state-access"] }),
+      config: config({ disabledRules: ["access-sandbox-state"] }),
     });
     expect(decision).toEqual({ action: "allow" });
   });
 
-  test("block and prompt reasons carry rule and remediation lines", () => {
+  test("block and prompt reasons carry rule and nextStep lines", () => {
     const block = inspectToolCall("bash", { command: "rm -rf /" }, cwd, {
       headless: true,
       config: config(),
     });
-    expect(reasonOf(block)).toContain("rule: root-deletion");
-    expect(reasonOf(block)).toContain(`remediation: ${ruleInfo("root-deletion")!.remediation}`);
+    expect(reasonOf(block)).toContain("rule: delete-filesystem-root");
+    expect(reasonOf(block)).toContain(`nextStep: ${ruleInfo("delete-filesystem-root")!.nextStep}`);
 
     const prompt = inspectToolCall("bash", { command: "rm -rf node_modules" }, cwd, {
       headless: false,
       config: config(),
     });
-    expect(reasonOf(prompt)).toContain("rule: recursive-cleanup");
-    expect(reasonOf(prompt)).toContain(`remediation: ${ruleInfo("recursive-cleanup")!.remediation}`);
+    expect(reasonOf(prompt)).toContain("rule: run-recursive-cleanup");
+    expect(reasonOf(prompt)).toContain(`nextStep: ${ruleInfo("run-recursive-cleanup")!.nextStep}`);
   });
 
   test("blocks metadata-host access in bash", () => {
@@ -362,7 +362,7 @@ describe("inspectToolCall", () => {
         { headless, config: config() },
       );
       expect(decision.action).toBe("block");
-      expect(reasonOf(decision)).toContain("rule: metadata-deny");
+      expect(reasonOf(decision)).toContain("rule: request-cloud-metadata");
     }
   });
 

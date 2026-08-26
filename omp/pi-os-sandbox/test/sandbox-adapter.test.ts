@@ -1,5 +1,5 @@
 /**
- * @fileoverview Adapter hook mapping, session-grant flow, denial-ring
+ * @fileoverview Adapter hook mapping, session-grant flow, policy-activity
  * recording, and the /sandbox customization page with a fake host.
  */
 
@@ -126,7 +126,7 @@ async function openPage(command: {
 /** Creates a sandbox handler wired to a throwaway config file. */
 function handlerWithConfigFile(
   file: string,
-): { fake: FakePi; handle: { ring: { entries(): { kind: string; rule: string; tool: string; reason: string }[] } } } {
+): { fake: FakePi; handle: { activity: { entries(): { kind: string; rule: string; tool: string; reason: string }[] } } } {
   const fake = makeFakePi();
   const handle = createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig(), file);
   return { fake, handle };
@@ -206,30 +206,30 @@ describe("tool_call hook (fake ExtensionAPI)", () => {
   });
 });
 
-describe("denial ring recording", () => {
-  test("blocks, prompts, and grants each record a ring entry", async () => {
+describe("policy activity recording", () => {
+  test("blocks, prompts, and grants each record an activity entry", async () => {
     const fake = makeFakePi();
     const handle = createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig());
     const cwd = "/repo";
 
     await runToolCall(fake, bashEvent("rm -rf /"), makeCtx(cwd, false));
-    expect(handle.ring.entries()[0]).toMatchObject({ kind: "block", rule: "root-deletion", tool: "bash" });
+    expect(handle.activity.entries()[0]).toMatchObject({ kind: "block", rule: "delete-filesystem-root", tool: "bash" });
 
     await runToolCall(fake, bashEvent("rm -rf node_modules"), makeCtx(cwd, true, true));
-    const entries = handle.ring.entries();
-    expect(entries[0]).toMatchObject({ kind: "grant", rule: "recursive-cleanup", tool: "bash" });
-    expect(entries[1]).toMatchObject({ kind: "prompt", rule: "recursive-cleanup", tool: "bash" });
-    expect(entries[2]).toMatchObject({ kind: "block", rule: "root-deletion", tool: "bash" });
+    const entries = handle.activity.entries();
+    expect(entries[0]).toMatchObject({ kind: "grant", rule: "run-recursive-cleanup", tool: "bash" });
+    expect(entries[1]).toMatchObject({ kind: "prompt", rule: "run-recursive-cleanup", tool: "bash" });
+    expect(entries[2]).toMatchObject({ kind: "block", rule: "delete-filesystem-root", tool: "bash" });
   });
 
   test("a declined approval records a block entry", async () => {
     const fake = makeFakePi();
     const handle = createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig());
     await runToolCall(fake, bashEvent("rm -rf node_modules"), makeCtx("/repo", true, false));
-    const entries = handle.ring.entries();
-    expect(entries[0]).toMatchObject({ kind: "block", rule: "recursive-cleanup", tool: "bash" });
+    const entries = handle.activity.entries();
+    expect(entries[0]).toMatchObject({ kind: "block", rule: "run-recursive-cleanup", tool: "bash" });
     expect(entries[0]!.reason).toBe("Operator declined approval.");
-    expect(entries[1]).toMatchObject({ kind: "prompt", rule: "recursive-cleanup", tool: "bash" });
+    expect(entries[1]).toMatchObject({ kind: "prompt", rule: "run-recursive-cleanup", tool: "bash" });
   });
 
   test("recorded reasons are redacted", async () => {
@@ -252,9 +252,9 @@ describe("denial ring recording", () => {
         makeCtx(dir, false),
       );
       expect(result?.block).toBe(true);
-      const entry = handle.ring.entries()[0]!;
+      const entry = handle.activity.entries()[0]!;
       expect(entry.kind).toBe("block");
-      expect(entry.rule).toBe("credential-read");
+      expect(entry.rule).toBe("read-credentials");
       expect(entry.reason).not.toContain(secret);
       expect(entry.reason).toContain("[redacted]");
     } finally {
@@ -278,13 +278,13 @@ describe("/sandbox customization page", () => {
 
       component.handleInput("\r");
 
-      expect(JSON.parse(readFileSync(file, "utf8"))["disabledRules"]).toEqual(["root-deletion"]);
-      expect(config.disabledRules).toEqual(["root-deletion"]);
-      expect(handle.ring.entries()[0]).toMatchObject({
+      expect(JSON.parse(readFileSync(file, "utf8"))["disabledRules"]).toEqual(["delete-filesystem-root"]);
+      expect(config.disabledRules).toEqual(["delete-filesystem-root"]);
+      expect(handle.activity.entries()[0]).toMatchObject({
         kind: "toggle",
-        rule: "root-deletion",
+        rule: "delete-filesystem-root",
         tool: "sandbox",
-        reason: "Operator disabled rule root-deletion",
+        reason: "Operator disabled rule delete-filesystem-root",
       });
 
       const result = await runToolCall(fake, bashEvent("rm -rf /"), makeCtx("/repo", false));
@@ -294,7 +294,7 @@ describe("/sandbox customization page", () => {
     }
   });
 
-  test("search filters by remediation text", async () => {
+  test("search filters by next step text", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
     try {
       const file = join(dir, "pi-os-sandbox.json");
@@ -307,8 +307,8 @@ describe("/sandbox customization page", () => {
       component.handleInput("\r");
 
       const saved = JSON.parse(readFileSync(file, "utf8"))["disabledRules"] as string[];
-      expect(saved).toEqual(["system-destruction"]);
-      expect(handle.ring.entries()[0]).toMatchObject({ kind: "toggle", rule: "system-destruction" });
+      expect(saved).toEqual(["destroy-system"]);
+      expect(handle.activity.entries()[0]).toMatchObject({ kind: "toggle", rule: "destroy-system" });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -327,7 +327,7 @@ describe("/sandbox customization page", () => {
       component.handleInput("\r");
 
       const saved = JSON.parse(readFileSync(file, "utf8"))["disabledRules"] as string[];
-      expect(saved).toEqual(["recursive-cleanup"]);
+      expect(saved).toEqual(["run-recursive-cleanup"]);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -370,7 +370,7 @@ describe("/sandbox customization page", () => {
 });
 
 describe("sandbox-status", () => {
-  test("reports ring summary and disabled rule count", async () => {
+  test("reports activity summary and disabled rule count", async () => {
     const fake = makeFakePi();
     createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig());
     const command = fake.commands.find((entry) => entry.name === "sandbox-status");
@@ -386,7 +386,7 @@ describe("sandbox-status", () => {
     } as unknown as ExtensionContext;
     await command!.handler({}, ctx);
     expect(notified[0]).toContain("0 disabled rules");
-    expect(notified[0]).toContain("denial ring: 0 entries");
+    expect(notified[0]).toContain("policy activity: 0 entries");
   });
 
   test("summary reflects recorded denials and toggles", async () => {
@@ -415,8 +415,8 @@ describe("sandbox-status", () => {
       } as unknown as ExtensionContext;
       await status!.handler({}, ctx);
       expect(notified[0]).toContain("1 disabled rule");
-      expect(notified[0]).toContain("denial ring: 2 entries (block:1 toggle:1)");
-      expect(handle.ring.entries()[0]).toMatchObject({ kind: "toggle", rule: "root-deletion" });
+      expect(notified[0]).toContain("policy activity: 2 entries (block:1 toggle:1)");
+      expect(handle.activity.entries()[0]).toMatchObject({ kind: "toggle", rule: "delete-filesystem-root" });
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

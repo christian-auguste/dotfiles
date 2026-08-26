@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
-import { DenialRing } from "../src/block-feedback";
+import { PolicyActivity } from "../src/block-feedback";
 import { defaultConfig, loadConfig } from "../src/config";
 import { SessionGrants } from "../src/session-grants";
 import { createSandboxHandler, loadSandboxConfig } from "../extensions/pi";
@@ -156,21 +156,21 @@ describe("tool_call hook (fake ExtensionAPI)", () => {
     expect(result?.reason).toBe("Blocked: exact approval was not granted.");
   });
 
-  test("ring records a block with its rule and redacted reason", async () => {
+  test("activity records a block with its rule and redacted reason", async () => {
     const fake = makeFakePi();
-    const ring = new DenialRing();
+    const activity = new PolicyActivity();
     const config = loadConfig({ credentialRoots: ["/tmp/token=abc123/creds"] });
-    createSandboxHandler(fake as unknown as ExtensionAPI, config, ring);
+    createSandboxHandler(fake as unknown as ExtensionAPI, config, activity);
     const result = await runToolCall(
       fake,
       readEvent("/tmp/token=abc123/creds/key"),
       makeCtx("/repo", false),
     );
     expect(result?.block).toBe(true);
-    const entries = ring.entries();
+    const entries = activity.entries();
     expect(entries).toHaveLength(1);
     expect(entries[0]?.kind).toBe("block");
-    expect(entries[0]?.rule).toBe("credential-read");
+    expect(entries[0]?.rule).toBe("read-credentials");
     expect(entries[0]?.tool).toBe("read");
     expect(entries[0]?.reason).toContain("[redacted]");
     expect(entries[0]?.reason).not.toContain("abc123");

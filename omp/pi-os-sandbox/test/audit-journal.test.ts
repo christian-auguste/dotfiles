@@ -1,6 +1,6 @@
 /**
  * @fileoverview Audit journal: redacted append-only persistence, replay,
- * bounding, torn-line tolerance, write-failure safety, and the denial-ring
+ * bounding, torn-line tolerance, write-failure safety, and the policy-activity
  * mirror.
  */
 
@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuditJournal, DEFAULT_JOURNAL_PATH } from "../src/audit-journal";
-import { DenialRing } from "../src/block-feedback";
+import { PolicyActivity } from "../src/block-feedback";
 import { defaultConfig } from "../src/config";
 import { protectedPath } from "../src/path-policy";
 
@@ -23,15 +23,15 @@ describe("AuditJournal", () => {
   test("appends and replays records in chronological order", () => {
     const path = join(fixture, "roundtrip.jsonl");
     const journal = new AuditJournal(path);
-    journal.append({ at: 1, kind: "denial", rule: "root-deletion", tool: "bash", reason: "blocked rm -rf /" });
-    journal.append({ at: 2, kind: "grant", rule: "recursive-cleanup", tool: "bash", reason: "approved rm -rf node_modules" });
+    journal.append({ at: 1, kind: "denial", rule: "delete-filesystem-root", tool: "bash", reason: "blocked rm -rf /" });
+    journal.append({ at: 2, kind: "grant", rule: "run-recursive-cleanup", tool: "bash", reason: "approved rm -rf node_modules" });
 
     const replayed = new AuditJournal(path).entries();
     expect(replayed).toHaveLength(2);
     expect(replayed[0]).toEqual({
       at: 1,
       kind: "denial",
-      rule: "root-deletion",
+      rule: "delete-filesystem-root",
       tool: "bash",
       reason: "blocked rm -rf /",
     });
@@ -44,7 +44,7 @@ describe("AuditJournal", () => {
     journal.append({
       at: 1,
       kind: "denial",
-      rule: "fetch-to-shell",
+      rule: "download-and-run-code",
       tool: "bash",
       reason: "token=sk-12345678901234567890123456789012 in url",
     });
@@ -97,41 +97,41 @@ describe("AuditJournal", () => {
   });
 });
 
-describe("DenialRing with journal", () => {
+describe("PolicyActivity with journal", () => {
   test("records mirror to the journal with mapped kinds", () => {
     const path = join(fixture, "ring.jsonl");
-    const ring = new DenialRing(new AuditJournal(path));
-    ring.record({ kind: "block", rule: "root-deletion", tool: "bash", reason: "rm -rf /" });
-    ring.record({ kind: "prompt", rule: "recursive-cleanup", tool: "bash", reason: "cleanup" });
-    ring.record({ kind: "grant", rule: "recursive-cleanup", tool: "bash", reason: "approved" });
-    ring.record({ kind: "toggle", rule: "force-push", tool: "bash", reason: "disabled by operator" });
+    const activity = new PolicyActivity(new AuditJournal(path));
+    activity.record({ kind: "block", rule: "delete-filesystem-root", tool: "bash", reason: "rm -rf /" });
+    activity.record({ kind: "prompt", rule: "run-recursive-cleanup", tool: "bash", reason: "cleanup" });
+    activity.record({ kind: "grant", rule: "run-recursive-cleanup", tool: "bash", reason: "approved" });
+    activity.record({ kind: "toggle", rule: "force-push", tool: "bash", reason: "disabled by operator" });
 
     const records = new AuditJournal(path).entries();
     expect(records.map((record) => record.kind)).toEqual(["denial", "denial", "grant", "toggle"]);
   });
 
-  test("journal reasons are redacted even when the ring entry is not", () => {
+  test("journal reasons are redacted even when the activity entry is not", () => {
     const path = join(fixture, "ring-redacted.jsonl");
-    const ring = new DenialRing(new AuditJournal(path));
-    ring.record({ kind: "block", rule: "fetch-to-shell", tool: "bash", reason: "api_key=AKIA0123456789ABCDEF call" });
+    const activity = new PolicyActivity(new AuditJournal(path));
+    activity.record({ kind: "block", rule: "download-and-run-code", tool: "bash", reason: "api_key=AKIA0123456789ABCDEF call" });
 
     const records = new AuditJournal(path).entries();
     expect(records[0]!.reason).toContain("[redacted]");
   });
 
   test("public API is unchanged: entries() and summary() work with a journal", () => {
-    const ring = new DenialRing(new AuditJournal(join(fixture, "ring-api.jsonl")));
-    ring.record({ kind: "block", rule: "root-deletion", tool: "bash", reason: "x" });
-    expect(ring.entries()).toHaveLength(1);
-    expect(ring.entries()[0]!.kind).toBe("block");
-    expect(ring.summary()).toContain("1 entries");
+    const activity = new PolicyActivity(new AuditJournal(join(fixture, "ring-api.jsonl")));
+    activity.record({ kind: "block", rule: "delete-filesystem-root", tool: "bash", reason: "x" });
+    expect(activity.entries()).toHaveLength(1);
+    expect(activity.entries()[0]!.kind).toBe("block");
+    expect(activity.summary()).toContain("1 entries");
   });
 
   test("records persist across instances via the journal file", () => {
     const path = join(fixture, "ring-persist.jsonl");
-    new DenialRing(new AuditJournal(path)).record({
+    new PolicyActivity(new AuditJournal(path)).record({
       kind: "grant",
-      rule: "recursive-cleanup",
+      rule: "run-recursive-cleanup",
       tool: "bash",
       reason: "approved",
     });

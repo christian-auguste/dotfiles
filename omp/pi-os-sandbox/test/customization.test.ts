@@ -1,5 +1,5 @@
 /**
- * @fileoverview Rule registry completeness, tab grouping, hard floor, and
+ * @fileoverview Rule registry completeness, group grouping, safety floor, and
  * operator toggle persistence against temp config paths.
  */
 
@@ -15,21 +15,21 @@ import {
 } from "../src/customization";
 
 const EXPECTED_IDS = [
-  "root-deletion",
-  "system-destruction",
-  "device-destruction",
-  "fetch-to-shell",
-  "credential-read",
-  "metadata-deny",
-  "safety-state-access",
-  "unverifiable-input",
-  "database-destruction",
-  "recursive-cleanup",
+  "delete-filesystem-root",
+  "destroy-system",
+  "destroy-device",
+  "download-and-run-code",
+  "read-credentials",
+  "request-cloud-metadata",
+  "access-sandbox-state",
+  "reject-unverifiable-input",
+  "destroy-database",
+  "run-recursive-cleanup",
   "force-push",
-  "opaque-interpreter",
-  "credential-write",
-  "instruction-write",
-  "instruction-access",
+  "run-hidden-destructive-code",
+  "write-credentials",
+  "write-instruction-files",
+  "access-instruction-files",
 ];
 
 const HARD_FLOOR_IDS = EXPECTED_IDS.slice(0, 9);
@@ -39,29 +39,29 @@ describe("ruleRegistry", () => {
     expect(ruleRegistry().map((rule) => rule.id)).toEqual(EXPECTED_IDS);
   });
 
-  test("every rule has display text and a remediation hint", () => {
+  test("every rule has display text and a next-step hint", () => {
     for (const rule of ruleRegistry()) {
       expect(rule.name.length).toBeGreaterThan(0);
       expect(rule.description.length).toBeGreaterThan(0);
-      expect(rule.remediation.length).toBeGreaterThan(0);
+      expect(rule.nextStep.length).toBeGreaterThan(0);
     }
   });
 
-  test("hardFloor matches the catastrophic-floor tab", () => {
+  test("isSafetyFloor matches the safety-floor group", () => {
     for (const rule of ruleRegistry()) {
-      expect(rule.hardFloor).toBe(rule.tab === "catastrophic-floor");
+      expect(rule.isSafetyFloor).toBe(rule.group === "safety-floor");
     }
-    expect(ruleRegistry().filter((rule) => rule.hardFloor).map((rule) => rule.id)).toEqual(
+    expect(ruleRegistry().filter((rule) => rule.isSafetyFloor).map((rule) => rule.id)).toEqual(
       HARD_FLOOR_IDS,
     );
   });
 
-  test("rules group into the three customization tabs", () => {
-    const idsByTab = (tab: string) =>
-      ruleRegistry().filter((rule) => rule.tab === tab).map((rule) => rule.id);
-    expect(idsByTab("catastrophic-floor")).toEqual(HARD_FLOOR_IDS);
-    expect(idsByTab("prompt-classes")).toEqual(["recursive-cleanup", "force-push", "opaque-interpreter"]);
-    expect(idsByTab("path-policy")).toEqual(["credential-write", "instruction-write", "instruction-access"]);
+  test("rules group into the three customization groups", () => {
+    const idsByGroup = (group: string) =>
+      ruleRegistry().filter((rule) => rule.group === group).map((rule) => rule.id);
+    expect(idsByGroup("safety-floor")).toEqual(HARD_FLOOR_IDS);
+    expect(idsByGroup("prompt-classes")).toEqual(["run-recursive-cleanup", "force-push", "run-hidden-destructive-code"]);
+    expect(idsByGroup("path-policy")).toEqual(["write-credentials", "write-instruction-files", "access-instruction-files"]);
   });
 });
 
@@ -103,8 +103,8 @@ describe("operator toggles", () => {
   test("disabled rules round-trip through save and load", () => {
     const configPath = freshConfigPath();
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
-    saveDisabledRules(new Set(["root-deletion", "credential-write"]), configPath);
-    expect(loadDisabledRules(configPath)).toEqual(new Set(["root-deletion", "credential-write"]));
+    saveDisabledRules(new Set(["delete-filesystem-root", "write-credentials"]), configPath);
+    expect(loadDisabledRules(configPath)).toEqual(new Set(["delete-filesystem-root", "write-credentials"]));
   });
 
   test("loadDisabledRules tolerates a malformed config", () => {
@@ -129,10 +129,10 @@ describe("operator toggles", () => {
     const configPath = freshConfigPath();
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
     saveDisabledRules(new Set(["force-push"]), configPath);
-    saveDisabledRules(new Set(["root-deletion"]), configPath);
-    expect(loadDisabledRules(configPath)).toEqual(new Set(["root-deletion"]));
+    saveDisabledRules(new Set(["delete-filesystem-root"]), configPath);
+    expect(loadDisabledRules(configPath)).toEqual(new Set(["delete-filesystem-root"]));
     expect(JSON.parse(fs.readFileSync(configPath, "utf8"))).toEqual({
-      disabledRules: ["root-deletion"],
+      disabledRules: ["delete-filesystem-root"],
     });
   });
 });
