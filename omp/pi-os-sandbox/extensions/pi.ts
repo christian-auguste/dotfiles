@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DenialRing } from "../src/block-feedback";
+import { PolicyActivity } from "../src/block-feedback";
 import { defaultConfig, loadConfig, type SandboxConfig } from "../src/config";
 import { inspectToolCall } from "../src/policy";
 import { redact } from "../src/redaction";
@@ -69,12 +69,12 @@ function previewCommand(toolName: string, input: unknown): string {
  *
  * @param config explicit config for tests, defaults to the loaded operator
  *               config.
- * @param ring denial history for tests, defaults to a fresh in-memory ring.
+ * @param activity policy activity for tests, defaults to a fresh in-memory log.
  */
 export function createSandboxHandler(
   pi: ExtensionAPI,
   config: SandboxConfig = loadSandboxConfig(CONFIG_PATH, (message) => console.warn(message)),
-  ring: DenialRing = new DenialRing(),
+  activity: PolicyActivity = new PolicyActivity(),
 ): void {
   const grants = new SessionGrants();
 
@@ -87,24 +87,24 @@ export function createSandboxHandler(
       });
       if (decision.action === "allow") return undefined;
       if (decision.action === "block") {
-        ring.record({ kind: "block", rule: decision.rule, tool: event.toolName, reason: redact(decision.reason) });
+        activity.record({ kind: "block", rule: decision.rule, tool: event.toolName, reason: redact(decision.reason) });
         return { block: true, reason: redact(decision.reason) };
       }
       if (!ctx.hasUI) {
-        ring.record({ kind: "block", rule: decision.rule, tool: event.toolName, reason: redact(decision.reason) });
+        activity.record({ kind: "block", rule: decision.rule, tool: event.toolName, reason: redact(decision.reason) });
         return { block: true, reason: redact(decision.reason) };
       }
-      ring.record({ kind: "prompt", rule: decision.rule, tool: event.toolName, reason: redact(decision.reason) });
+      activity.record({ kind: "prompt", rule: decision.rule, tool: event.toolName, reason: redact(decision.reason) });
       const approved = await ctx.ui.confirm(
         "Approve risky operation?",
         `${decision.reason}\n\n${preview(event.toolName, event.input)}`,
       );
       if (approved) {
         grants.grant(previewCommand(event.toolName, event.input), ctx.cwd);
-        ring.record({ kind: "grant", rule: decision.rule, tool: event.toolName, reason: redact(previewCommand(event.toolName, event.input)) });
+        activity.record({ kind: "grant", rule: decision.rule, tool: event.toolName, reason: redact(previewCommand(event.toolName, event.input)) });
         return undefined;
       }
-      ring.record({ kind: "block", rule: decision.rule, tool: event.toolName, reason: "Blocked: exact approval was not granted." });
+      activity.record({ kind: "block", rule: decision.rule, tool: event.toolName, reason: "Blocked: exact approval was not granted." });
       return { block: true, reason: "Blocked: exact approval was not granted." };
     } catch {
       return { block: true, reason: "Blocked: sandbox policy error." };
@@ -115,7 +115,7 @@ export function createSandboxHandler(
     description: "Show pi-os-sandbox policy summary",
     handler: async (_args, ctx) => {
       ctx.ui.notify(
-        `pi-os-sandbox: ${config.safetyRoots.length} safety roots, ${config.credentialRoots.length} credential roots, ${config.metadataHosts.length} metadata hosts, headless: fail-closed\n${ring.summary()}`,
+        `pi-os-sandbox: ${config.safetyRoots.length} safety roots, ${config.credentialRoots.length} credential roots, ${config.metadataHosts.length} metadata hosts, headless: fail-closed\n${activity.summary()}`,
       );
     },
   });

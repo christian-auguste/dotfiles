@@ -1,21 +1,21 @@
 /**
  * @fileoverview OMP adapter: loads the operator config, gates tool calls
  * through the shared policy with interactive approval and headless grants,
- * and exposes a rule customization page plus denial-ring diagnostics.
+ * and exposes a rule customization page plus policy-activity diagnostics.
  */
 
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import type { ExtensionAPI, KeybindingsManager, Theme } from "@oh-my-pi/pi-coding-agent";
-import { DenialRing } from "../src/block-feedback";
+import { PolicyActivity } from "../src/block-feedback";
 import { defaultConfig, loadConfig, type SandboxConfig } from "../src/config";
 import {
   loadDisabledRules,
   ruleRegistry,
   saveDisabledRules,
-  type RuleInfo,
-  type SandboxTab,
+  type RuleGroup,
+  type SandboxRule,
 } from "../src/customization";
 import { inspectToolCall } from "../src/policy";
 import { redact } from "../src/redaction";
@@ -24,11 +24,11 @@ import { SessionGrants } from "../src/session-grants";
 const CONFIG_PATH = join(homedir(), ".omp", "agent", "pi-os-sandbox.json");
 
 /** Tabs of the customization page, in display order. */
-const TABS: SandboxTab[] = ["catastrophic-floor", "prompt-classes", "path-policy"];
+const TABS: RuleGroup[] = ["safety-floor", "prompt-classes", "path-policy"];
 
 /** Short display label for each customization tab. */
-const TAB_LABELS: Record<SandboxTab, string> = {
-  "catastrophic-floor": "catastrophic floor",
+const TAB_LABELS: Record<RuleGroup, string> = {
+  "safety-floor": "safety floor",
   "prompt-classes": "prompt classes",
   "path-policy": "path policy",
 };
@@ -105,7 +105,7 @@ function clip(text: string, width: number): string {
 /**
  * Full-screen rule customization page mirroring the /settings navigation: a
  * tab bar, a searchable rule list, and keyboard plus mouse controls. Toggling
- * a rule persists it to the operator config and records a denial-ring entry;
+ * a rule persists it to the operator config and records a policy-activity entry;
  * the change applies on the next tool call.
  */
 class SandboxPage implements PageComponent {
@@ -125,7 +125,7 @@ class SandboxPage implements PageComponent {
    * @param keybindings host key bindings, navigation follows user remaps.
    * @param done closes the page.
    * @param configPath operator config file toggles are saved to.
-   * @param ring denial ring that receives toggle entries.
+   * @param activity policy activity that receives toggle entries.
    * @param onToggle applies the changed disabled set to the in-memory config.
    */
   constructor(
@@ -134,23 +134,23 @@ class SandboxPage implements PageComponent {
     private readonly keybindings: KeybindingsManager,
     private readonly done: () => void,
     private readonly configPath: string,
-    private readonly ring: DenialRing,
+    private readonly activity: PolicyActivity,
     private readonly onToggle: (disabled: Set<string>) => void,
   ) {
     this.disabled = loadDisabledRules(configPath);
   }
 
-  /** Rules in the active tab, filtered by id, name, and remediation text. */
-  private visibleRules(): RuleInfo[] {
+  /** Rules in the active tab, filtered by id, name, and next-step text. */
+  private visibleRules(): SandboxRule[] {
     const tab = TABS[this.activeTab]!;
     const query = this.query.trim().toLowerCase();
     return ruleRegistry().filter((rule) => {
-      if (rule.tab !== tab) return false;
+      if (rule.group !== tab) return false;
       if (query === "") return true;
       return (
         rule.id.toLowerCase().includes(query) ||
         rule.name.toLowerCase().includes(query) ||
-        rule.remediation.toLowerCase().includes(query)
+        rule.nextStep.toLowerCase().includes(query)
       );
     });
   }
@@ -181,8 +181,8 @@ class SandboxPage implements PageComponent {
     if (rule) this.toggle(rule);
   }
 
-  /** Toggles one rule: persists it, applies it to the in-memory config, and records a ring entry. */
-  private toggle(rule: RuleInfo): void {
+  /** Toggles one rule: persists it, applies it to the in-memory config, and records an activity entry. */
+  private toggle(rule: SandboxRule): void {
     if (this.disabled.has(rule.id)) {
       this.disabled.delete(rule.id);
     } else {
@@ -191,7 +191,7 @@ class SandboxPage implements PageComponent {
     saveDisabledRules(this.disabled, this.configPath);
     this.onToggle(this.disabled);
     const state = this.disabled.has(rule.id) ? "disabled" : "enabled";
-    this.ring.record({
+    this.activity.record({
       kind: "toggle",
       rule: rule.id,
       tool: "sandbox",
@@ -299,7 +299,7 @@ class SandboxPage implements PageComponent {
   }
 
   /** Builds one rule row: cursor, id, state, then name and description. */
-  private renderRow(rule: RuleInfo, isSelected: boolean, idWidth: number, width: number): string {
+  private renderRow(rule: SandboxRule, isSelected: boolean, idWidth: number, width: number): string {
     const cursor = isSelected ? this.theme.fg("accent", ">") : " ";
     const stateText = this.disabled.has(rule.id) ? "[disabled]" : "[enabled]";
     const state = this.disabled.has(rule.id)
@@ -342,7 +342,7 @@ class SandboxPage implements PageComponent {
 
     const search =
       this.query === ""
-        ? this.theme.fg("dim", "type to filter by id, name, or remediation")
+        ? this.theme.fg("dim", "type to filter by id, name, or next step")
         : this.theme.bold(this.query);
     lines.push(` search: ${search}`);
 
@@ -366,20 +366,20 @@ class SandboxPage implements PageComponent {
 /**
  * Gate tool calls through the policy, prompting for approval and granting
  * exact commands for headless reuse. Every denial and grant is recorded in
- * the denial ring; the /sandbox page lets the operator disable rules.
+ * the policy activity; the /sandbox page lets the operator disable rules.
  *
  * @param config explicit config for tests, defaults to the loaded operator config.
  * @param configPath config file the customization page reads and writes,
  *                   defaults to the operator config.
- * @returns the denial ring, exposed for diagnostics and tests.
+ * @returns the policy activity, exposed for diagnostics and tests.
  */
 export function createSandboxHandler(
   pi: ExtensionAPI,
   config: SandboxConfig = loadSandboxConfig(CONFIG_PATH, (message) => pi.logger.warn(message)),
   configPath: string = CONFIG_PATH,
-): { ring: DenialRing } {
+): { activity: PolicyActivity } {
   const grants = new SessionGrants();
-  const ring = new DenialRing();
+  const activity = new PolicyActivity();
 
   pi.on("tool_call", async (event, ctx) => {
     try {
@@ -390,7 +390,7 @@ export function createSandboxHandler(
       });
       if (decision.action === "allow") return undefined;
       if (decision.action === "block" || !ctx.hasUI) {
-        ring.record({
+        activity.record({
           kind: "block",
           rule: decision.rule,
           tool: event.toolName,
@@ -398,7 +398,7 @@ export function createSandboxHandler(
         });
         return { block: true, reason: redact(decision.reason) };
       }
-      ring.record({
+      activity.record({
         kind: "prompt",
         rule: decision.rule,
         tool: event.toolName,
@@ -410,7 +410,7 @@ export function createSandboxHandler(
       );
       if (approved) {
         grants.grant(previewCommand(event.toolName, event.input), ctx.cwd);
-        ring.record({
+        activity.record({
           kind: "grant",
           rule: decision.rule,
           tool: event.toolName,
@@ -418,7 +418,7 @@ export function createSandboxHandler(
         });
         return undefined;
       }
-      ring.record({
+      activity.record({
         kind: "block",
         rule: decision.rule,
         tool: event.toolName,
@@ -439,7 +439,7 @@ export function createSandboxHandler(
       }
       await ctx.ui.custom<void>(
         (tui, theme, keybindings, done) =>
-          new SandboxPage(tui, theme, keybindings, done, configPath, ring, (disabled) => {
+          new SandboxPage(tui, theme, keybindings, done, configPath, activity, (disabled) => {
             config.disabledRules = [...disabled];
           }),
         {
@@ -463,12 +463,12 @@ export function createSandboxHandler(
       ctx.ui.notify(
         `pi-os-sandbox: ${config.safetyRoots.length} safety roots, ${config.credentialRoots.length} credential roots, ` +
           `${config.metadataHosts.length} metadata hosts, ${disabledCount} disabled rule${disabledCount === 1 ? "" : "s"}, ` +
-          `headless: fail-closed; ${ring.summary()}`,
+          `headless: fail-closed; ${activity.summary()}`,
       );
     },
   });
 
-  return { ring };
+  return { activity };
 }
 
 export default function (pi: ExtensionAPI): void {
