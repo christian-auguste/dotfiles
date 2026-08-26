@@ -11,31 +11,40 @@ import type { ExtensionAPI, ExtensionContext, ToolCallEvent, ToolCallEventResult
 import { defaultConfig } from "../src/config";
 import { SessionGrants } from "../src/session-grants";
 import { createSandboxHandler, loadSandboxConfig } from "../extensions/omp";
+import { AuditJournal } from "../src/audit-journal";
+import { ruleRegistry } from "../src/customization";
 
 /** Minimal ExtensionAPI stand-in that captures registered handlers/commands. */
 interface FakePi {
   handlers: Map<string, (event: unknown, ctx: unknown) => unknown>;
   commands: { name: string; handler: (args: unknown, ctx: unknown) => unknown }[];
+  shortcuts: { id: string; options: unknown }[];
   logger: { warn: () => void; error: () => void };
   on(event: string, handler: (event: unknown, ctx: unknown) => unknown): void;
   registerCommand(
     name: string,
     options: { handler: (args: unknown, ctx: unknown) => unknown },
   ): void;
+  registerShortcut(id: string, options: unknown): void;
 }
 
 function makeFakePi(): FakePi {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   const commands: { name: string; handler: (args: unknown, ctx: unknown) => unknown }[] = [];
+  const shortcuts: { id: string; options: unknown }[] = [];
   return {
     handlers,
     commands,
+    shortcuts,
     logger: { warn: () => {}, error: () => {} },
     on: (event, handler) => {
       handlers.set(event, handler);
     },
     registerCommand: (name, options) => {
       commands.push({ name, handler: options.handler });
+    },
+    registerShortcut: (id, options) => {
+      shortcuts.push({ id, options });
     },
   };
 }
@@ -60,6 +69,12 @@ async function runToolCall(
     | undefined;
   expect(handler).toBeDefined();
   return handler!(event, ctx);
+}
+
+/** Small delay to allow async confirm toggles to settle. */
+async function tick(): Promise<void> {
+  await Promise.resolve();
+  await Promise.resolve();
 }
 
 function bashEvent(command: string): ToolCallEvent {
@@ -98,35 +113,47 @@ function makeKeybindings(): unknown {
   };
 }
 
-/** Opens the /sandbox page via the fake host and returns its live component. */
-async function openPage(command: {
-  handler: (args: unknown, ctx: unknown) => unknown;
-}): Promise<{ component: { handleInput(data: string): void }; closed: boolean }> {
-  let component: { handleInput(data: string): void } | undefined;
+/**
+ * Opens the /sandbox page via the fake host and returns its live component.
+ *
+ * @param confirmResult whether safety-floor confirm should approve.
+ */
+async function openPage(
+  command: { handler: (args: unknown, ctx: unknown) => unknown },
+  opts: { mode?: string; confirmResult?: boolean } = {},
+): Promise<{
+  component: { handleInput(data: string): void; render(width: number): readonly string[] };
+  closed: boolean;
+  notified: string[];
+}> {
+  let component: { handleInput(data: string): void; render(width: number): readonly string[] } | undefined;
   let closed = false;
+  const notified: string[] = [];
   const ui = {
-    notify: () => {},
+    notify: (message: string) => { notified.push(message); },
+    confirm: async () => opts.confirmResult ?? true,
     custom: async (factory: (...args: unknown[]) => unknown) => {
       component = (await factory(makeTui(), makeTheme(), makeKeybindings(), () => {
         closed = true;
-      })) as { handleInput(data: string): void };
+      })) as { handleInput(data: string): void; render(width: number): readonly string[] };
       return undefined;
     },
   };
-  await command.handler({}, { mode: "tui", ui, hasUI: true, cwd: "/repo" } as unknown as ExtensionContext);
+  await command.handler({}, { mode: opts.mode ?? "tui", ui, hasUI: true, cwd: "/repo" } as unknown as ExtensionContext);
   expect(component).toBeDefined();
   return {
     component: component!,
     get closed() {
       return closed;
     },
+    notified,
   };
 }
 
 /** Creates a sandbox handler wired to a throwaway config file. */
 function handlerWithConfigFile(
   file: string,
-): { fake: FakePi; handle: { activity: { entries(): { kind: string; rule: string; tool: string; reason: string }[] } } } {
+): { fake: FakePi; handle: { activity: { entries(): { kind: string; rule: string; tool: string; reason: string; at: number }[] } } } {
   const fake = makeFakePi();
   const handle = createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig(), file);
   return { fake, handle };
@@ -204,6 +231,15 @@ describe("tool_call hook (fake ExtensionAPI)", () => {
     createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig());
     expect(fake.commands.map((command) => command.name)).toContain("sandbox-status");
   });
+
+  test("registers /sandbox and /sandbox-session commands and Option+S shortcut", () => {
+    const fake = makeFakePi();
+    createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig());
+    const names = fake.commands.map((c) => c.name);
+    expect(names).toContain("sandbox");
+    expect(names).toContain("sandbox-session");
+    expect(fake.shortcuts.map((s) => s.id)).toContain("alt+s");
+  });
 });
 
 describe("policy activity recording", () => {
@@ -275,9 +311,8 @@ describe("/sandbox customization page", () => {
       const command = fake.commands.find((entry) => entry.name === "sandbox");
       expect(command).toBeDefined();
       const { component } = await openPage(command!);
-
       component.handleInput("\r");
-
+      await tick();
       expect(JSON.parse(readFileSync(file, "utf8"))["disabledRules"]).toEqual(["delete-filesystem-root"]);
       expect(config.disabledRules).toEqual(["delete-filesystem-root"]);
       expect(handle.activity.entries()[0]).toMatchObject({
@@ -286,7 +321,6 @@ describe("/sandbox customization page", () => {
         tool: "sandbox",
         reason: "Operator disabled rule delete-filesystem-root",
       });
-
       const result = await runToolCall(fake, bashEvent("rm -rf /"), makeCtx("/repo", false));
       expect(result).toBeUndefined();
     } finally {
@@ -294,7 +328,48 @@ describe("/sandbox customization page", () => {
     }
   });
 
-  test("search filters by next step text", async () => {
+  test("safety-floor toggle requires confirm; cancel keeps rule enabled", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const { component } = await openPage(command!, { confirmResult: false });
+      component.handleInput("\r");
+      await tick();
+      const saved = JSON.parse(readFileSync(file, "utf8"))["disabledRules"];
+      expect(saved).toBeUndefined();
+      expect(config.disabledRules).toEqual([]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("disabled safety-floor shows warning label", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, JSON.stringify({ disabledRules: ["delete-filesystem-root"] }));
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      // Load disabled into config via handler startup
+      const handle = createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      // Ensure config reflects saved disabled
+      expect(config.disabledRules).toContain("delete-filesystem-root");
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const { component } = await openPage(command!);
+      const lines = component.render(100).join("\n");
+      expect(lines).toContain("warning");
+      expect(lines).toContain("disabled");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("search filters by next step text and Enter toggles without leaving search", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
     try {
       const file = join(dir, "pi-os-sandbox.json");
@@ -302,19 +377,26 @@ describe("/sandbox customization page", () => {
       const { fake, handle } = handlerWithConfigFile(file);
       const command = fake.commands.find((entry) => entry.name === "sandbox");
       const { component } = await openPage(command!);
-
       for (const char of "shutdown") component.handleInput(char);
+      // Should be in search mode: grouped results with heading
+      const linesDuringSearch = component.render(100).join("\n");
+      expect(linesDuringSearch).toContain("Safety floor");
+      expect(linesDuringSearch).toContain("matches");
+      // Toggle while searching: should not clear query
       component.handleInput("\r");
-
+      await tick();
       const saved = JSON.parse(readFileSync(file, "utf8"))["disabledRules"] as string[];
       expect(saved).toEqual(["destroy-system"]);
       expect(handle.activity.entries()[0]).toMatchObject({ kind: "toggle", rule: "destroy-system" });
+      // Still in search after toggle
+      const stillSearching = component.render(100).join("\n");
+      expect(stillSearching).toContain("shutdown");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
 
-  test("tab switching moves to the next tab's rules", async () => {
+  test("global grouped search shows headings and match count and bottom explanation", async () => {
     const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
     try {
       const file = join(dir, "pi-os-sandbox.json");
@@ -322,12 +404,122 @@ describe("/sandbox customization page", () => {
       const { fake } = handlerWithConfigFile(file);
       const command = fake.commands.find((entry) => entry.name === "sandbox");
       const { component } = await openPage(command!);
+      for (const char of "credential") component.handleInput(char);
+      const lines = component.render(100).join("\n");
+      // Should have headings for matching groups
+      expect(lines).toContain("matches");
+      // Bottom explanation: description of selected hit
+      const registry = ruleRegistry().find((r) => r.id === "write-credentials" || r.id === "read-credentials");
+      expect(lines).toContain(registry!.description.slice(0, 10));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
+  test("Esc clears search, second Esc closes page", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const { fake } = handlerWithConfigFile(file);
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const page = await openPage(command!);
+      for (const char of "shutdown") page.component.handleInput(char);
+      expect(page.component.render(100).join("\n")).toContain("shutdown");
+      page.component.handleInput("\x1b");
+      expect(page.component.render(100).join("\n")).not.toContain("shutdown");
+      expect(page.closed).toBe(false);
+      page.component.handleInput("\x1b");
+      expect(page.closed).toBe(true);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("tab switching moves to the next tab's rules and shows icons", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const { fake } = handlerWithConfigFile(file);
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const { component } = await openPage(command!);
+      const initial = component.render(100).join("\n");
+      expect(initial).toContain("Safety floor");
+      expect(initial).toContain("⬢");
+      expect(initial).toContain("⬣");
+      expect(initial).toContain("⬔");
+      expect(initial).toContain("◈");
       component.handleInput("\t");
+      const after = component.render(100).join("\n");
+      expect(after).toContain("Recursive cleanup");
       component.handleInput("\r");
-
+      await tick();
       const saved = JSON.parse(readFileSync(file, "utf8"))["disabledRules"] as string[];
       expect(saved).toEqual(["run-recursive-cleanup"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("details panel order: state → description → nextStep → Rule id", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const { fake } = handlerWithConfigFile(file);
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const { component } = await openPage(command!);
+      const lines = component.render(100);
+      const text = lines.join("\n");
+      // Should contain state, description, nextStep, Rule id in order
+      const stateIdx = text.indexOf("State:");
+      const descIdx = text.indexOf(ruleRegistry()[0]!.description.slice(0, 10));
+      const nextIdx = text.indexOf(ruleRegistry()[0]!.nextStep.slice(0, 10));
+      const idIdx = text.indexOf(`Rule id: ${ruleRegistry()[0]!.id}`);
+      expect(stateIdx).toBeGreaterThan(-1);
+      expect(descIdx).toBeGreaterThan(stateIdx);
+      expect(nextIdx).toBeGreaterThan(descIdx);
+      expect(idIdx).toBeGreaterThan(nextIdx);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("path-policy details show protected paths with ~/ short form", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const { fake } = handlerWithConfigFile(file);
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const { component } = await openPage(command!);
+      // Switch to path-policy tab (2 tabs forward from safety-floor)
+      component.handleInput("\t");
+      component.handleInput("\t");
+      const text = component.render(100).join("\n");
+      expect(text).toContain("~/");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("footer hints change contextually and summary shows two rows", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const { fake } = handlerWithConfigFile(file);
+      const command = fake.commands.find((entry) => entry.name === "sandbox");
+      const { component } = await openPage(command!);
+      let text = component.render(100).join("\n");
+      expect(text).toContain("Saved rules:");
+      expect(text).toContain("Active rules:");
+      expect(text).toContain("Enter/Space change");
+      // Typing search changes footer
+      for (const c of "hi") component.handleInput(c);
+      text = component.render(100).join("\n");
+      expect(text).toContain("Esc clear search");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -369,6 +561,187 @@ describe("/sandbox customization page", () => {
   });
 });
 
+describe("Session Sandbox", () => {
+  test("session toggle does not persist to disk but updates effective config and banner", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      const cmd = fake.commands.find((entry) => entry.name === "sandbox-session");
+      expect(cmd).toBeDefined();
+      const { component } = await openPage(cmd!, { confirmResult: true });
+      const before = component.render(100).join("\n");
+      expect(before).toContain("Session Sandbox");
+      expect(before).toContain("Session-only changes");
+      component.handleInput("\r");
+      await tick();
+      // Saved file unchanged
+      const saved = JSON.parse(readFileSync(file, "utf8"))["disabledRules"];
+      expect(saved).toBeUndefined();
+      // Config reflects effective
+      expect(config.disabledRules).toContain("delete-filesystem-root");
+      // Row shows saved → session
+      const after = component.render(100).join("\n");
+      expect(after).toContain("saved:");
+      expect(after).toContain("session:");
+      expect(after).toContain("Session overrides active");
+      expect(after).toContain("Active rules:");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("session reset clears overrides and restores saved", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      const cmd = fake.commands.find((entry) => entry.name === "sandbox-session");
+      const { component } = await openPage(cmd!);
+      component.handleInput("\r");
+      await tick();
+      expect(config.disabledRules.length).toBe(1);
+      // Reset via 'r' key
+      component.handleInput("r");
+      expect(config.disabledRules.length).toBe(0);
+      const text = component.render(100).join("\n");
+      expect(text).not.toContain("Session overrides active");
+      // Footer shows reset when overrides active, but after reset no banner
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("effective disabled overlays saved and session correctly", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, JSON.stringify({ disabledRules: ["destroy-system"] }));
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      const handle = createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      // Initially effective includes saved disabled
+      expect(config.disabledRules).toContain("destroy-system");
+      // Open session and toggle a different rule
+      const cmd = fake.commands.find((e) => e.name === "sandbox-session");
+      const { component } = await openPage(cmd!);
+      component.handleInput("\r"); // toggle delete-filesystem-root in session
+      await tick();
+      expect(config.disabledRules).toContain("delete-filesystem-root");
+      expect(config.disabledRules).toContain("destroy-system");
+      // Toggle same rule again in session to re-enable
+      component.handleInput("\r");
+      await tick();
+      expect(config.disabledRules).not.toContain("delete-filesystem-root");
+      expect(config.disabledRules).toContain("destroy-system");
+      // Session overrides map reflects only session changes
+      expect(handle.sessionOverrides.has("delete-filesystem-root")).toBe(true);
+      expect(handle.sessionOverrides.get("delete-filesystem-root")).toBe(false);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("Activity tab merges current and saved newest first", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      const handle = createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      const cwd = "/repo";
+      await runToolCall(fake, bashEvent("rm -rf /"), makeCtx(cwd, false));
+      // Add a persisted journal entry with older timestamp directly
+      const journalPath = join(dir, "audit.jsonl");
+      const journal = new AuditJournal(journalPath, () => {});
+      journal.append({ at: Date.now() - 100_000, kind: "denial", rule: "write-credentials", tool: "bash", reason: "old persisted entry" });
+      // Create a new handler that reads that journal? Instead inject via handle's journal
+      // Use the handler's journal already; append an old entry
+      (handle as unknown as { journal: AuditJournal }).journal.append({
+        at: Date.now() - 100_000,
+        kind: "denial",
+        rule: "write-credentials",
+        tool: "bash",
+        reason: "old persisted entry",
+      });
+      const cmd = fake.commands.find((e) => e.name === "sandbox");
+      const { component } = await openPage(cmd!);
+      // Switch to Activity tab (3 tabs forward)
+      component.handleInput("\t");
+      component.handleInput("\t");
+      component.handleInput("\t");
+      const text = component.render(100).join("\n");
+      expect(text).toContain("Activity");
+      // Should show both current block and persisted entry; newest first => delete-filesystem-root first
+      const idxNew = text.indexOf("delete-filesystem-root");
+      const idxOld = text.indexOf("write-credentials");
+      expect(idxNew).toBeGreaterThan(-1);
+      expect(idxOld).toBeGreaterThan(-1);
+      expect(idxNew).toBeLessThan(idxOld);
+      // Empty message not shown when entries exist
+      expect(text).not.toContain("No recent activity");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  test("Activity empty shows placeholder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const fake = makeFakePi();
+      createSandboxHandler(fake as unknown as ExtensionAPI, defaultConfig(), file);
+      const cmd = fake.commands.find((e) => e.name === "sandbox");
+      const { component } = await openPage(cmd!);
+      component.handleInput("\t");
+      component.handleInput("\t");
+      component.handleInput("\t");
+      const text = component.render(100).join("\n");
+      expect(text).toContain("No recent activity");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("mouse handling", () => {
+  test("row click selects and state click toggles", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "pi-sandbox-"));
+    try {
+      const file = join(dir, "pi-os-sandbox.json");
+      writeFileSync(file, "{}");
+      const fake = makeFakePi();
+      const config = defaultConfig();
+      createSandboxHandler(fake as unknown as ExtensionAPI, config, file);
+      const cmd = fake.commands.find((e) => e.name === "sandbox");
+      const { component } = await openPage(cmd!);
+      // Render to populate hits; rows start at row index maybe 6+ depending on header
+      component.render(100);
+      // Access private hits via any
+      const hits = (component as unknown as { rowHits: { row: number; index: number; stateStart: number; stateEnd: number }[] }).rowHits;
+      expect(hits.length).toBeGreaterThan(0);
+      const first = hits[0]!;
+      // Click row (col 0) selects
+      component.handleInput(`\x1b[<0;1;${first.row + 1}M`);
+      // Toggle via state column click: col = stateStart+1
+      const stateCol = first.stateStart + 1;
+      component.handleInput(`\x1b[<0;${stateCol + 1};${first.row + 1}M`);
+      await tick();
+      expect(config.disabledRules).toContain(ruleRegistry()[0]!.id);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe("sandbox-status", () => {
   test("reports activity summary and disabled rule count", async () => {
     const fake = makeFakePi();
@@ -402,6 +775,7 @@ describe("sandbox-status", () => {
       const command = fake.commands.find((entry) => entry.name === "sandbox");
       const { component } = await openPage(command!);
       component.handleInput("\r");
+      await tick();
 
       const notified: string[] = [];
       const status = fake.commands.find((entry) => entry.name === "sandbox-status");
