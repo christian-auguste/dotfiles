@@ -18,7 +18,7 @@ rules.
 - Pitch bold ideas when they'd meaningfully help.
 - Be careful with destructive actions I didn't explicitly request.
 - Tests and TDD are great. Endless smoke tests and "regression tests" for deletions are not. Focused, not sloppy.
-- Comments capture what the code doesn't already say. Describe functions and interfaces concisely. Update them as part of the change, not a follow-up. Use concise inline comments when the code's behavior is not obvious
+- Comments capture what the code doesn't already say. Describe functions and interfaces concisely. Update them as part of the change, not a follow-up. Use concise inline comments when the code's behavior is not obvious; don't use them as a diary.
 - Write clean code. Use meaningful and descriptive names that reflect the behavior.
 
 # Questions are read-only
