@@ -8,7 +8,7 @@ import type { AuditJournal, JournalKind } from "./audit-journal";
 const MAX_ENTRIES = 100;
 
 /** One recorded policy decision. Secrets are removed from the reason before recording. */
-export interface RingEntry {
+export interface PolicyActivityEntry {
   /** Date.now() at record time. */
   at: number;
   /** What happened: block, prompt, grant, or toggle. */
@@ -21,8 +21,8 @@ export interface RingEntry {
   reason: string;
 }
 
-/** Maps a ring kind to the journal kind; block and prompt are both denials. */
-function journalKind(kind: RingEntry["kind"]): JournalKind {
+/** Maps an activity kind to the journal kind; block and prompt are both denials. */
+function journalKind(kind: PolicyActivityEntry["kind"]): JournalKind {
   return kind === "grant" || kind === "toggle" ? kind : "denial";
 }
 
@@ -32,12 +32,12 @@ function journalKind(kind: RingEntry["kind"]): JournalKind {
  * inspect recent policy behavior without log digging; the journal keeps the
  * durable copy.
  */
-export class DenialRing {
-  private ring: RingEntry[] = [];
+export class PolicyActivity {
+  private activity: PolicyActivityEntry[] = [];
   private readonly journal?: AuditJournal;
 
   /**
-   * Creates an empty ring.
+   * Creates an empty activity log.
    *
    * @param journal optional audit journal; every record is appended to it.
    */
@@ -46,11 +46,11 @@ export class DenialRing {
   }
 
   /** Appends an entry, drops the oldest past the cap, and mirrors it to the journal when one is set. */
-  record(entry: Omit<RingEntry, "at">): void {
+  record(entry: Omit<PolicyActivityEntry, "at">): void {
     const at = Date.now();
-    this.ring.push({ at, ...entry });
-    if (this.ring.length > MAX_ENTRIES) {
-      this.ring.splice(0, this.ring.length - MAX_ENTRIES);
+    this.activity.push({ at, ...entry });
+    if (this.activity.length > MAX_ENTRIES) {
+      this.activity.splice(0, this.activity.length - MAX_ENTRIES);
     }
     this.journal?.append({
       at,
@@ -62,19 +62,19 @@ export class DenialRing {
   }
 
   /** Returns recorded entries, newest first, capped at 100. */
-  entries(): RingEntry[] {
-    return [...this.ring].reverse();
+  entries(): PolicyActivityEntry[] {
+    return [...this.activity].reverse();
   }
 
   /** Returns a compact one-line diagnostic summary of recorded activity. */
   summary(): string {
-    if (this.ring.length === 0) return "denial ring: 0 entries";
+    if (this.activity.length === 0) return "policy activity: 0 entries";
     const counts = new Map<string, number>();
-    for (const entry of this.ring) {
+    for (const entry of this.activity) {
       counts.set(entry.kind, (counts.get(entry.kind) ?? 0) + 1);
     }
     const byKind = [...counts].map(([kind, n]) => `${kind}:${n}`).join(" ");
-    const latest = this.ring[this.ring.length - 1]!;
-    return `denial ring: ${this.ring.length} entries (${byKind}); latest ${latest.kind} ${latest.rule} on ${latest.tool}`;
+    const latest = this.activity[this.activity.length - 1]!;
+    return `policy activity: ${this.activity.length} entries (${byKind}); latest ${latest.kind} ${latest.rule} on ${latest.tool}`;
   }
 }

@@ -11,8 +11,8 @@ import { ruleInfo } from "./customization";
 
 export type Decision =
   | { action: "allow" }
-  | { action: "prompt"; reason: string; rule: string; remediation: string }
-  | { action: "block"; reason: string; rule: string; remediation: string };
+  | { action: "prompt"; reason: string; rule: string; nextStep: string }
+  | { action: "block"; reason: string; rule: string; nextStep: string };
 
 /**
  * Approval store: a headless run may proceed with a prompt-class operation
@@ -42,14 +42,14 @@ function stringField(input: unknown, key: string): string | null {
   return typeof value === "string" ? value : null;
 }
 
-/** Builds a direct block decision, appending the rule and remediation lines. */
+/** Builds a direct block decision, appending the rule and next-step lines. */
 function decisionFor(rule: string, reason: string): Decision {
-  const remediation = ruleInfo(rule)?.remediation ?? "";
+  const nextStep = ruleInfo(rule)?.nextStep ?? "";
   return {
     action: "block",
-    reason: `${reason} rule: ${rule} remediation: ${remediation}`,
+    reason: `${reason} rule: ${rule} nextStep: ${nextStep}`,
     rule,
-    remediation,
+    nextStep,
   };
 }
 
@@ -63,19 +63,19 @@ function apply(
 ): Decision {
   if (decision === null) return { action: "allow" };
   if (disabled.has(decision.rule)) return { action: "allow" };
-  const suffix = ` rule: ${decision.rule} remediation: ${decision.remediation}`;
+  const suffix = ` rule: ${decision.rule} nextStep: ${decision.nextStep}`;
   if (decision.action === "block") {
-    return { action: "block", reason: `${decision.reason}${suffix}`, rule: decision.rule, remediation: decision.remediation };
+    return { action: "block", reason: `${decision.reason}${suffix}`, rule: decision.rule, nextStep: decision.nextStep };
   }
   if (!opts.headless) {
-    return { action: "prompt", reason: `${decision.reason}${suffix}`, rule: decision.rule, remediation: decision.remediation };
+    return { action: "prompt", reason: `${decision.reason}${suffix}`, rule: decision.rule, nextStep: decision.nextStep };
   }
   if (opts.grants?.has(commandForGrant, cwd)) return { action: "allow" };
   return {
     action: "block",
     reason: `${decision.reason}${NO_APPROVAL_SUFFIX}${GRANT_HINT}${suffix}`,
     rule: decision.rule,
-    remediation: decision.remediation,
+    nextStep: decision.nextStep,
   };
 }
 
@@ -90,43 +90,43 @@ export function inspectToolCall(
 
   if (toolName === "bash") {
     const command = stringField(input, "command") ?? "";
-    if (!disabled.has("safety-state-access") && mentionsSafetyState(command, cwd, safetyRoots) && !isGitMetadataCommand(command)) {
-      return decisionFor("safety-state-access", SAFETY_BLOCK);
+    if (!disabled.has("access-sandbox-state") && mentionsSafetyState(command, cwd, safetyRoots) && !isGitMetadataCommand(command)) {
+      return decisionFor("access-sandbox-state", SAFETY_BLOCK);
     }
-    if (!disabled.has("instruction-access") && mentionsSafetyState(command, cwd, instructionRoots) && !isGitMetadataCommand(command)) {
-      return decisionFor("instruction-access", INSTRUCTION_ACCESS_BLOCK);
+    if (!disabled.has("access-instruction-files") && mentionsSafetyState(command, cwd, instructionRoots) && !isGitMetadataCommand(command)) {
+      return decisionFor("access-instruction-files", INSTRUCTION_ACCESS_BLOCK);
     }
     return apply(classifyCommand(command, metadataHosts), command, cwd, opts, disabled);
   }
 
   if (toolName === "eval") {
     const code = stringField(input, "code") ?? "";
-    if (!disabled.has("safety-state-access") && mentionsSafetyState(code, cwd, safetyRoots)) {
-      return decisionFor("safety-state-access", SAFETY_BLOCK);
+    if (!disabled.has("access-sandbox-state") && mentionsSafetyState(code, cwd, safetyRoots)) {
+      return decisionFor("access-sandbox-state", SAFETY_BLOCK);
     }
-    if (!disabled.has("instruction-access") && mentionsSafetyState(code, cwd, instructionRoots)) {
-      return decisionFor("instruction-access", INSTRUCTION_ACCESS_BLOCK);
+    if (!disabled.has("access-instruction-files") && mentionsSafetyState(code, cwd, instructionRoots)) {
+      return decisionFor("access-instruction-files", INSTRUCTION_ACCESS_BLOCK);
     }
     return apply(classifyEval(code, metadataHosts), code, cwd, opts, disabled);
   }
 
   if (toolName === "read" || toolName === "grep" || toolName === "glob") {
     for (const value of pathArguments(input)) {
-      if (!disabled.has("safety-state-access") && resolveProtectedPath(value, cwd, safetyRoots) !== null) {
-        return decisionFor("safety-state-access", ACCESS_BLOCK);
+      if (!disabled.has("access-sandbox-state") && resolveProtectedPath(value, cwd, safetyRoots) !== null) {
+        return decisionFor("access-sandbox-state", ACCESS_BLOCK);
       }
       if (resolveProtectedPath(value, cwd, instructionRoots) !== null) {
         continue;
       }
       const root = resolveProtectedPath(value, cwd, credentialRoots);
       if (root !== null) {
-        const remediation = ruleInfo("credential-read")?.remediation ?? "";
+        const nextStep = ruleInfo("read-credentials")?.nextStep ?? "";
         return apply(
           {
             action: "prompt",
             reason: `Reading a protected credential path needs approval: ${root}`,
-            rule: "credential-read",
-            remediation,
+            rule: "read-credentials",
+            nextStep,
           },
           value,
           cwd,
@@ -140,14 +140,14 @@ export function inspectToolCall(
 
   if (toolName === "write" || toolName === "edit") {
     for (const value of pathArguments(input)) {
-      if (!disabled.has("safety-state-access") && resolveProtectedPath(value, cwd, safetyRoots) !== null) {
-        return decisionFor("safety-state-access", ACCESS_BLOCK);
+      if (!disabled.has("access-sandbox-state") && resolveProtectedPath(value, cwd, safetyRoots) !== null) {
+        return decisionFor("access-sandbox-state", ACCESS_BLOCK);
       }
-      if (!disabled.has("instruction-write") && resolveProtectedPath(value, cwd, instructionRoots) !== null) {
-        return decisionFor("instruction-write", INSTRUCTION_WRITE_BLOCK);
+      if (!disabled.has("write-instruction-files") && resolveProtectedPath(value, cwd, instructionRoots) !== null) {
+        return decisionFor("write-instruction-files", INSTRUCTION_WRITE_BLOCK);
       }
-      if (!disabled.has("credential-write") && resolveProtectedPath(value, cwd, credentialRoots) !== null) {
-        return decisionFor("credential-write", CREDENTIAL_WRITE_BLOCK);
+      if (!disabled.has("write-credentials") && resolveProtectedPath(value, cwd, credentialRoots) !== null) {
+        return decisionFor("write-credentials", CREDENTIAL_WRITE_BLOCK);
       }
     }
     return { action: "allow" };

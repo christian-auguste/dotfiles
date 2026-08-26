@@ -7,159 +7,161 @@ import { homedir } from "node:os";
 import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-export type SandboxTab = "catastrophic-floor" | "prompt-classes" | "path-policy";
+export type RuleGroup = "safety-floor" | "prompt-classes" | "path-policy";
+
+export type SandboxTab = RuleGroup | "activity";
 
 /**
  * One toggleable guard rule. The registry is the single source of truth for
- * rule ids and remediation hints; the classifier and policy look ids up here.
+ * rule ids and next-step hints; the classifier and policy look ids up here.
  */
-export interface RuleInfo {
-  /** Stable id, e.g. "root-deletion". Survives renames of name or text. */
+export interface SandboxRule {
+  /** Stable id, e.g. "delete-filesystem-root". Survives renames of name or text. */
   id: string;
-  /** Tab in the operator customization page. */
-  tab: SandboxTab;
+  /** Group in the operator customization page. */
+  group: RuleGroup;
   /** Short display name. */
   name: string;
   /** One line: what this rule blocks. */
   description: string;
   /** One line: how to unblock legitimately. */
-  remediation: string;
-  /** True for the catastrophic-floor tab; disabling one is a deliberate choice recorded in the audit log. */
-  hardFloor: boolean;
+  nextStep: string;
+  /** True for the safety-floor group; disabling one is a deliberate choice recorded in the audit log. */
+  isSafetyFloor: boolean;
 }
 
 const OPERATOR_CONFIG = resolve(homedir(), ".omp", "agent", "pi-os-sandbox.json");
 
-const RULES: RuleInfo[] = [
+const RULES: SandboxRule[] = [
   {
-    id: "root-deletion",
-    tab: "catastrophic-floor",
+    id: "delete-filesystem-root",
+    group: "safety-floor",
     name: "Root deletion",
     description: "Recursive deletion of the filesystem root.",
-    remediation: "Run the deletion manually.",
-    hardFloor: true,
+    nextStep: "Run the deletion manually.",
+    isSafetyFloor: true,
   },
   {
-    id: "system-destruction",
-    tab: "catastrophic-floor",
+    id: "destroy-system",
+    group: "safety-floor",
     name: "System destruction",
     description: "System shutdown or process destruction.",
-    remediation: "Run the shutdown or kill manually.",
-    hardFloor: true,
+    nextStep: "Run the shutdown or kill manually.",
+    isSafetyFloor: true,
   },
   {
-    id: "device-destruction",
-    tab: "catastrophic-floor",
+    id: "destroy-device",
+    group: "safety-floor",
     name: "Device destruction",
     description: "Disk formatting or device overwrite.",
-    remediation: "Run the disk operation manually.",
-    hardFloor: true,
+    nextStep: "Run the disk operation manually.",
+    isSafetyFloor: true,
   },
   {
-    id: "fetch-to-shell",
-    tab: "catastrophic-floor",
+    id: "download-and-run-code",
+    group: "safety-floor",
     name: "Fetch to shell",
     description: "Downloading code and running it as a shell command.",
-    remediation: "Download and review the script, then run it manually.",
-    hardFloor: true,
+    nextStep: "Download and review the script, then run it manually.",
+    isSafetyFloor: true,
   },
   {
-    id: "credential-read",
-    tab: "catastrophic-floor",
+    id: "read-credentials",
+    group: "safety-floor",
     name: "Credential read",
     description: "Reading private SSH credential paths.",
-    remediation: "Grant the exact command, or read the credential manually.",
-    hardFloor: true,
+    nextStep: "Grant the exact command, or read the credential manually.",
+    isSafetyFloor: true,
   },
   {
-    id: "metadata-deny",
-    tab: "catastrophic-floor",
+    id: "request-cloud-metadata",
+    group: "safety-floor",
     name: "Metadata deny",
     description: "Fetching cloud metadata endpoints the sandbox always blocks.",
-    remediation: "Run the fetch manually; the endpoint stays blocked for the agent.",
-    hardFloor: true,
+    nextStep: "Run the fetch manually; the endpoint stays blocked for the agent.",
+    isSafetyFloor: true,
   },
   {
-    id: "safety-state-access",
-    tab: "catastrophic-floor",
+    id: "access-sandbox-state",
+    group: "safety-floor",
     name: "Safety-state access",
     description: "Reading or modifying protected sandbox state.",
-    remediation: "Edit sandbox state manually, outside the agent.",
-    hardFloor: true,
+    nextStep: "Edit sandbox state manually, outside the agent.",
+    isSafetyFloor: true,
   },
   {
-    id: "unverifiable-input",
-    tab: "catastrophic-floor",
+    id: "reject-unverifiable-input",
+    group: "safety-floor",
     name: "Unverifiable input",
     description: "Empty or unverifiable commands and eval cells.",
-    remediation: "Provide a verifiable command or eval cell.",
-    hardFloor: true,
+    nextStep: "Provide a verifiable command or eval cell.",
+    isSafetyFloor: true,
   },
   {
-    id: "database-destruction",
-    tab: "catastrophic-floor",
+    id: "destroy-database",
+    group: "safety-floor",
     name: "Database destruction",
     description: "Database-wide destructive operations.",
-    remediation: "Run the database operation manually.",
-    hardFloor: true,
+    nextStep: "Run the database operation manually.",
+    isSafetyFloor: true,
   },
   {
-    id: "recursive-cleanup",
-    tab: "prompt-classes",
+    id: "run-recursive-cleanup",
+    group: "prompt-classes",
     name: "Recursive cleanup",
     description: "Recursive or destructive developer cleanup.",
-    remediation: "Grant the exact command, or run it manually.",
-    hardFloor: false,
+    nextStep: "Grant the exact command, or run it manually.",
+    isSafetyFloor: false,
   },
   {
     id: "force-push",
-    tab: "prompt-classes",
+    group: "prompt-classes",
     name: "Force push",
     description: "Force push to a Git ref.",
-    remediation: "Grant the exact command, or push manually.",
-    hardFloor: false,
+    nextStep: "Grant the exact command, or push manually.",
+    isSafetyFloor: false,
   },
   {
-    id: "opaque-interpreter",
-    tab: "prompt-classes",
+    id: "run-hidden-destructive-code",
+    group: "prompt-classes",
     name: "Opaque interpreter",
     description: "Destructive work hidden inside an interpreter.",
-    remediation: "Run the script manually, or grant the exact command.",
-    hardFloor: false,
+    nextStep: "Run the script manually, or grant the exact command.",
+    isSafetyFloor: false,
   },
   {
-    id: "credential-write",
-    tab: "path-policy",
+    id: "write-credentials",
+    group: "path-policy",
     name: "Credential write",
     description: "Writing to a protected credential path.",
-    remediation: "Write the credential manually.",
-    hardFloor: false,
+    nextStep: "Write the credential manually.",
+    isSafetyFloor: false,
   },
   {
-    id: "instruction-write",
-    tab: "path-policy",
+    id: "write-instruction-files",
+    group: "path-policy",
     name: "Instruction write",
     description: "Writing to a protected instruction file.",
-    remediation: "Edit the instruction file manually.",
-    hardFloor: false,
+    nextStep: "Edit the instruction file manually.",
+    isSafetyFloor: false,
   },
   {
-    id: "instruction-access",
-    tab: "path-policy",
+    id: "access-instruction-files",
+    group: "path-policy",
     name: "Instruction access",
     description: "Shell or eval access to protected instruction files.",
-    remediation: "Read instructions with the read tool; edit manually.",
-    hardFloor: false,
+    nextStep: "Read instructions with the read tool; edit manually.",
+    isSafetyFloor: false,
   },
 ];
 
 /** Returns every toggleable rule, grouped by tab in the customization page. */
-export function ruleRegistry(): RuleInfo[] {
+export function ruleRegistry(): SandboxRule[] {
   return [...RULES];
 }
 
 /** Returns the rule for an id, or undefined when the id is not registered. */
-export function ruleInfo(id: string): RuleInfo | undefined {
+export function ruleInfo(id: string): SandboxRule | undefined {
   return RULES.find((rule) => rule.id === id);
 }
 
