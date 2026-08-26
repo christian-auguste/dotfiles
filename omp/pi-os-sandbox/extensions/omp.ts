@@ -521,8 +521,8 @@ class SandboxPage implements PageComponent {
       this.moveSelection(wheel);
       return true;
     }
-    if (motion || !leftClick) return true;
-    const tab = this.tabHits.find((hit) => row === 1 && col >= hit.start && col < hit.end);
+    const tabRow = this.mode === "session" ? 3 : 2;
+    const tab = this.tabHits.find((hit) => row === tabRow && col >= hit.start && col < hit.end);
     if (tab && !this.isSearching()) {
       this.activeTab = tab.index;
       this.selected = 0;
@@ -629,6 +629,10 @@ class SandboxPage implements PageComponent {
   render(width: number): readonly string[] {
     if (this.cache !== null && this.cache.width === width) return this.cache.lines;
 
+    const innerWidth = Math.max(20, width - 2);
+    const top = this.theme.fg("dim", `┌${"─".repeat(innerWidth)}┐`);
+    const bottom = this.theme.fg("dim", `└${"─".repeat(innerWidth)}┘`);
+    const side = this.theme.fg("dim", "│");
     const lines: string[] = [];
     this.rowHits.length = 0;
     this.tabHits.length = 0;
@@ -650,6 +654,7 @@ class SandboxPage implements PageComponent {
       col += chip.length + 2;
     }
     lines.push(tabLine);
+    lines.push(this.theme.fg("dim", ` ${"─".repeat(innerWidth - 1)}`));
 
     // Search field: visible, typing starts search.
     const searchPlaceholder = this.theme.fg("dim", "Type to search rules and activity");
@@ -659,7 +664,7 @@ class SandboxPage implements PageComponent {
     const searchLine = this.query === ""
       ? ` Search: ${searchPlaceholder}`
       : ` Search: ${searchContent}${matchInfo ? `  ${this.theme.fg("dim", matchInfo)}` : ""}`;
-    lines.push(searchLine);
+    lines.push(clip(searchLine, innerWidth));
 
     // Summary lines
     const totalRules = ruleRegistry().length;
@@ -690,8 +695,6 @@ class SandboxPage implements PageComponent {
           Math.max(0, this.selected - listRows + 2),
           Math.max(0, grouped.length - listRows + 1),
         );
-        // Build flat lines with headings interleaved, but selection maps to grouped index.
-        // For simplicity, render heading then rows, and track rowHits per visible grouped hit.
         let renderedGroups = 0;
         for (const g of groupOrder) {
           const hits = groups[g] ?? [];
@@ -704,7 +707,6 @@ class SandboxPage implements PageComponent {
                 : g === "path-policy"
                   ? "Path policy"
                   : "Activity";
-          // Only render heading if its hits intersect the window.
           const groupStart = grouped.indexOf(hits[0]!);
           const groupEnd = grouped.indexOf(hits[hits.length - 1]!);
           if (groupEnd < windowStart || groupStart >= windowStart + listRows) {
@@ -719,13 +721,13 @@ class SandboxPage implements PageComponent {
             }
             const isSelected = globalIndex === this.selected;
             if (hit.kind === "rule") {
-              const { line, stateStart, stateEnd } = this.renderRuleRow(hit.rule, isSelected, width);
+              const { line, stateStart, stateEnd } = this.renderRuleRow(hit.rule, isSelected, innerWidth);
               lines.push(line);
               this.rowHits.push({ row: lines.length - 1, index: globalIndex, stateStart, stateEnd });
             } else {
-              const row = this.renderActivityRow(hit.entry, isSelected, width);
+              const row = this.renderActivityRow(hit.entry, isSelected, innerWidth);
               lines.push(row);
-              this.rowHits.push({ row: lines.length - 1, index: globalIndex, stateStart: width, stateEnd: width });
+              this.rowHits.push({ row: lines.length - 1, index: globalIndex, stateStart: innerWidth, stateEnd: innerWidth });
             }
             globalIndex++;
           }
@@ -736,7 +738,7 @@ class SandboxPage implements PageComponent {
         if (selected) {
           const explanation =
             selected.kind === "rule" ? selected.rule.description : selected.entry.reason;
-          lines.push(` ${this.theme.fg("dim", clip(explanation, width - 2))}`);
+          lines.push(` ${this.theme.fg("dim", clip(explanation, innerWidth - 2))}`);
         }
       }
     } else {
@@ -754,8 +756,8 @@ class SandboxPage implements PageComponent {
           lines.push(` ${this.theme.fg("dim", "No recent activity — blocks and changes will appear here.")}`);
         } else {
           // Two-column: left activity list, right details. For narrow terminals, stack.
-          const leftWidth = Math.floor((width - 3) / 2);
-          const rightWidth = width - leftWidth - 3;
+          const leftWidth = Math.floor((innerWidth - 3) / 2);
+          const rightWidth = innerWidth - leftWidth - 3;
           const visible = merged.slice(windowStart, windowStart + listRows);
           const selectedEntry = merged[this.selected];
           const details = selectedEntry
@@ -777,8 +779,7 @@ class SandboxPage implements PageComponent {
             const right = (details[i] ?? "").padEnd(rightWidth, " ");
             const line = `${left} │ ${right}`;
             const finalLine = isSel && i < visible.length ? this.theme.bg("selectedBg", line) : line;
-            // For activity rows, state toggle not applicable, but keep hit for selection.
-            lines.push(finalLine);
+            lines.push(clip(finalLine, innerWidth));
             if (rowHit) this.rowHits.push(rowHit);
           }
         }
@@ -792,8 +793,8 @@ class SandboxPage implements PageComponent {
           Math.max(0, count - listRows),
         );
         const selectedRule = list[this.selected];
-        const leftWidth = Math.floor((width - 3) / 2);
-        const rightWidth = width - leftWidth - 3;
+        const leftWidth = Math.floor((innerWidth - 3) / 2);
+        const rightWidth = innerWidth - leftWidth - 3;
         // Render left list and right details side by side.
         const visible = list.slice(windowStart, windowStart + listRows);
         const details = selectedRule ? this.ruleDetails(selectedRule, rightWidth) : [];
@@ -810,15 +811,13 @@ class SandboxPage implements PageComponent {
             if (rule) {
               const rendered = this.renderRuleRow(rule, isSel, leftWidth);
               left = rendered.line.padEnd(leftWidth, " ");
-              // Map state column to overall line coordinates: leftWidth is left panel width, state is within left.
               hit = { row: lines.length, index: idx, stateStart: rendered.stateStart, stateEnd: rendered.stateEnd };
             } else {
               left = " ".repeat(leftWidth);
             }
             const right = (details[i] ?? "").padEnd(rightWidth, " ");
             const line = `${left} │ ${right}`;
-            // Selection highlight already applied to left; for the combined line, keep as is.
-            lines.push(line);
+            lines.push(clip(line, innerWidth));
             if (hit) this.rowHits.push(hit);
           }
         }
@@ -834,10 +833,26 @@ class SandboxPage implements PageComponent {
     } else {
       footer = "Enter/Space change · Tab jump sections · ←/→ switch tabs · Type to search · Esc close";
     }
-    lines.push(` ${this.theme.fg("dim", footer)}`);
+    lines.push(this.theme.fg("dim", ` ${"─".repeat(innerWidth - 1)}`));
+    lines.push(` ${this.theme.fg("dim", clip(footer, innerWidth - 1))}`);
 
-    this.cache = { width, lines };
-    return lines;
+    // Wrap with outer border and adjust hit coordinates for border offset.
+    const bordered: string[] = [];
+    bordered.push(top);
+    for (const line of lines) {
+      const padded = line.padEnd(innerWidth, " ");
+      // Ensure we don't exceed innerWidth before wrapping.
+      const clipped = clip(padded, innerWidth);
+      bordered.push(`${side}${clipped}${side}`);
+    }
+    bordered.push(bottom);
+    // Offset hits for the outer border (top row + left column).
+    for (const hit of this.rowHits) hit.row += 1;
+    for (const hit of this.tabHits) hit.start += 1;
+    for (const hit of this.tabHits) hit.end += 1;
+
+    this.cache = { width, lines: bordered };
+    return bordered;
   }
 }
 
@@ -924,19 +939,21 @@ export function createSandboxHandler(
   });
 
   const openPage = (ctx: unknown, mode: PageMode) => {
-    const c = ctx as {
-      mode: string;
-      ui: {
-        custom: <T>(
-          factory: (tui: TuiSurface, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void) => PageComponent,
-          options?: unknown,
-        ) => Promise<T>;
-        confirm: (t: string, m: string) => Promise<boolean>;
-        notify: (m: string, t?: string) => void;
-      };
-    };
-    if (c.mode !== "tui") {
-      c.ui.notify("pi-os-sandbox: /sandbox is terminal-only; run it in interactive mode.", "warning");
+    const c = ctx as
+      | {
+          mode?: string;
+          ui?: {
+            custom?: <T>(
+              factory: (tui: TuiSurface, theme: Theme, keybindings: KeybindingsManager, done: (result: T) => void) => PageComponent,
+              options?: unknown,
+            ) => Promise<T>;
+            confirm?: (t: string, m: string) => Promise<boolean>;
+            notify?: (m: string, t?: string) => void;
+          };
+        }
+      | undefined;
+    if (!c || c.mode !== "tui" || !c.ui?.custom) {
+      c?.ui?.notify?.("pi-os-sandbox: /sandbox is terminal-only; run it in interactive mode.", "warning");
       return Promise.resolve();
     }
     return c.ui.custom<void>(
@@ -953,8 +970,8 @@ export function createSandboxHandler(
           savedDisabled,
           sessionOverrides,
           mode,
-          (title, message) => c.ui.confirm(title, message),
-          (message) => c.ui.notify(message),
+          (title, message) => c.ui!.confirm!(title, message),
+          (message) => c.ui!.notify!(message),
         ),
       {
         overlay: true,
@@ -1001,7 +1018,7 @@ export function createSandboxHandler(
     if (typeof maybe.registerShortcut === "function") {
       maybe.registerShortcut("alt+s", {
         description: "Open session sandbox",
-        handler: async (_args: unknown, ctx: unknown) => {
+        handler: async (ctx: unknown) => {
           await openPage(ctx, "session");
         },
       });
