@@ -29,9 +29,16 @@ want them.
 
 # Writing
 
-At the start of the session use the `unslop` skill and after reading it
-**apply it to everything you write** (messages to me, comments,
-documentation, etc.)
+Unslop every piece of prose you produce for tasks governed by this file.
+
+Before writing prose, read the `unslop` skill if it is not already in
+context. Apply its process to messages, explanations, comments,
+documentation, commit messages, and other human-readable text. Preserve the
+requested meaning, facts, and tone.
+
+Before sending or saving prose, complete the skill's self-audit and revise any
+remaining AI tells. Do not rewrite code syntax, identifiers, or literal
+content unless asked.
 
 # Commits
 
