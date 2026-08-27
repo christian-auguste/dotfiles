@@ -89,65 +89,7 @@ do
 done
 
 step "LSP"
-# Explicit user-level server mapping for the Brewfile-installed LSPs; bare
-# binary names survive brew version bumps.
-lsp_json="$HOME/.omp/agent/lsp.json"
-lsp_tmp="$(mktemp)"
-cat >"$lsp_tmp" <<'JSON'
-{
-  "servers": {
-    "typescript-language-server": {
-      "command": "typescript-language-server",
-      "args": ["--stdio"],
-      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"],
-      "rootMarkers": ["tsconfig.json", "package.json"]
-    },
-    "basedpyright": {
-      "command": "basedpyright-langserver",
-      "args": ["--stdio"],
-      "fileTypes": [".py"],
-      "rootMarkers": ["pyproject.toml", "setup.py", "setup.cfg", "pyrightconfig.json", "requirements.txt"]
-    },
-    "rust-analyzer": {
-      "command": "rust-analyzer",
-      "fileTypes": [".rs"],
-      "rootMarkers": ["Cargo.toml", ".git"]
-    },
-    "vscode-html-language-server": {
-      "command": "vscode-html-language-server",
-      "args": ["--stdio"],
-      "fileTypes": [".html", ".htm", ".svg"],
-      "rootMarkers": ["package.json", ".git"]
-    },
-    "vscode-css-language-server": {
-      "command": "vscode-css-language-server",
-      "args": ["--stdio"],
-      "fileTypes": [".css", ".scss", ".less"],
-      "rootMarkers": ["package.json", ".git"]
-    },
-    "vscode-json-language-server": {
-      "command": "vscode-json-language-server",
-      "args": ["--stdio"],
-      "fileTypes": [".json"],
-      "rootMarkers": ["package.json", ".git"]
-    },
-    "eslint": {
-      "command": "vscode-eslint-language-server",
-      "args": ["--stdio"],
-      "fileTypes": [".ts", ".tsx", ".js", ".jsx", ".vue", ".svelte"],
-      "rootMarkers": [".eslintrc", ".eslintrc.json", ".eslintrc.js", "eslint.config.js", "package.json"]
-    }
-  }
-}
-JSON
-if [ -f "$lsp_json" ] && cmp -s "$lsp_json" "$lsp_tmp"; then
-  ok "lsp.json already up to date"
-  rm -f "$lsp_tmp"
-else
-  mkdir -p "$(dirname "$lsp_json")"
-  mv "$lsp_tmp" "$lsp_json"
-  ok "wrote $lsp_json"
-fi
+# OMP discovers installed language servers from its built-in defaults.
 
 step "Manual steps left"
 cat <<'EOF'
