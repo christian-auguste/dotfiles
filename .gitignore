@@ -26,6 +26,9 @@ pi/.pi/knowledge-search/
 pi/.pi/memory/
 pi/.pi/session-search/
 
+# Generated Pi runtime state
+pi/.pi/agent/pi-os-sandbox-audit.jsonl
+pi/.pi/pi-atlas-cache.json
 # herdr runtime state: keep config tracked, ignore per-run session state.
 herdr/.config/herdr/.plugins.lock
 herdr/.config/herdr/session.json
