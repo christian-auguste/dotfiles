@@ -3,15 +3,19 @@
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022"],
+    "lib": ["ES2024"],
     "types": ["bun"],
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "forceConsistentCasingInFileNames": true,
-    "noUncheckedIndexedAccess": true,
+    "noUncheckedIndexedAccess": false,
     "paths": {
+      "@oh-my-pi/pi-tui": ["/tmp/oh-my-pi-work/oh-my-pi/packages/tui/src/index.ts"],
+      "@oh-my-pi/pi-natives": ["/tmp/oh-my-pi-work/oh-my-pi/packages/natives/native/index.d.ts"],
+      "@oh-my-pi/pi-utils": ["/tmp/oh-my-pi-work/oh-my-pi/packages/utils/src/index.ts"],
+      "@oh-my-pi/pi-coding-agent/src/modes/components/overlay-box": ["/tmp/oh-my-pi-work/oh-my-pi/packages/coding-agent/src/modes/components/overlay-box.ts"],
       "@oh-my-pi/pi-coding-agent": ["../.omp/agent/node_modules/@oh-my-pi/pi-coding-agent/dist/types/index.d.ts"],
       "@earendil-works/pi-coding-agent": ["/opt/homebrew/lib/node_modules/@earendil-works/pi-coding-agent/dist/index.d.ts"]
     }

@@ -22,7 +22,25 @@ import { inspectToolCall } from "../src/policy";
 import { redact } from "../src/redaction";
 import { SessionGrants } from "../src/session-grants";
 
+import { visibleWidth, truncateToWidth, padding, wrapTextWithAnsi } from "@oh-my-pi/pi-tui";
+import { fit, topBorder, divider, bottomBorder, row, splitRow, topBorderSplit, dividerSplit } from "../src/overlay-box";
+
 const CONFIG_PATH = join(homedir(), ".omp", "agent", "pi-os-sandbox.json");
+
+let cachedSandboxSidebarWidth: number | undefined;
+function sandboxSidebarWidth(): number {
+  if (cachedSandboxSidebarWidth !== undefined) return cachedSandboxSidebarWidth;
+  let nameWidth = 0;
+  for (const tab of TABS) nameWidth = Math.max(nameWidth, visibleWidth(TAB_LABELS[tab] ?? tab));
+  cachedSandboxSidebarWidth = Math.min(22, nameWidth) + 4;
+  return cachedSandboxSidebarWidth;
+}
+
+function footerHintText(searching: boolean, mode: PageMode, hasOverrides: boolean): string {
+  if (searching) return "Type to search · Esc clear search · Enter select · ↑/↓ move";
+  if (mode === "session" && hasOverrides) return "Enter/Space change · Tab jump sections · ←/→ switch tabs · Type to search · Esc close · r reset session";
+  return "Enter/Space change · Tab jump sections · ←/→ switch tabs · Type to search · Esc close";
+}
 
 /** Tabs in display order: three rule groups plus the activity log. */
 const TABS: SandboxTab[] = ["safety-floor", "prompt-classes", "path-policy", "activity"];
@@ -159,6 +177,15 @@ class SandboxPage implements PageComponent {
   private cache: { width: number; lines: readonly string[] } | null = null;
   private readonly rowHits: { row: number; index: number; stateStart: number; stateEnd: number }[] = [];
   private readonly tabHits: { start: number; end: number; index: number }[] = [];
+  private readonly sidebarHitRows: (number | undefined)[] = [];
+  private readonly hitRowsByLine: (number | undefined)[] = [];
+  private readonly stateStartsByLine: (number | undefined)[] = [];
+  private sidebarHitCol = 0;
+  private tabRowStart = 0;
+  private tabRowCount = 0;
+  private contentRowStart = 0;
+  private contentRowCount = 0;
+  private expanded = false;
 
   /**
    * Creates the page.
@@ -420,7 +447,9 @@ class SandboxPage implements PageComponent {
    * toggling, then repaints when the page changed.
    */
   handleInput(data: string): void {
-    if (this.handleMouse(data)) return;
+    // Session drawer is keyboard-only like ModelPicker (model-picker.ts:65-67);
+    // mouse tracking is reserved for fullscreen overlays (tui.ts:353-371).
+    if (this.mode === "saved" && this.handleMouse(data)) return;
     if (this.keybindings.matches(data, "tui.select.cancel")) {
       if (this.isSearching()) {
         this.query = "";
@@ -488,6 +517,11 @@ class SandboxPage implements PageComponent {
       this.resetSession();
       return;
     }
+    if (data === "\x0f" || data === "\x0F") {
+      this.expanded = !this.expanded;
+      this.repaint();
+      return;
+    }
     if (data === "\x7f" || data === "\b") {
       if (this.query.length > 0) {
         this.query = this.query.slice(0, -1);
@@ -503,9 +537,20 @@ class SandboxPage implements PageComponent {
     }
   }
 
+  private hitTest(line: number, col: number): number | undefined {
+    if (this.sidebarHitCol > 0 && col < this.sidebarHitCol) return this.sidebarHitRows[line];
+    return this.hitRowsByLine[line];
+  }
+  private hoverTest(line: number, col: number): number | undefined {
+    if (this.sidebarHitCol > 0 && col < this.sidebarHitCol) return undefined;
+    return this.hitRowsByLine[line];
+  }
+
   /**
    * Routes an SGR mouse report: wheel scrolls the selection, clicks toggle a
-   * rule or switch tabs.
+   * rule or switch tabs. Uses host geometry (tabRowStart/contentRowStart) and
+   * innerCol inset like SettingsSelector. Guarded to fullscreen only —
+   * session drawer is keyboard-only (model-picker.ts:65-67, tui.ts:353-371).
    */
   private handleMouse(data: string): boolean {
     const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
@@ -517,30 +562,83 @@ class SandboxPage implements PageComponent {
     const wheel = button & 64 ? (button & 1 ? 1 : -1) : null;
     const motion = (button & 32) !== 0 && wheel === null;
     const leftClick = !release && wheel === null && !motion && (button & 3) === 0;
+    const innerCol = col - 2;
+    const contentLine = row - this.contentRowStart;
+    const tabLine = row - this.tabRowStart;
+    const overTabs = tabLine >= 0 && tabLine < this.tabRowCount;
+    const overContent = contentLine >= 0 && contentLine < this.contentRowCount;
     if (wheel !== null) {
-      this.moveSelection(wheel);
+      if (overContent) {
+        if (this.sidebarHitCol > 0 && innerCol < this.sidebarHitCol) return true;
+        this.moveSelection(wheel);
+      } else if (overTabs) this.moveSelection(wheel);
+      else this.moveSelection(wheel);
       return true;
     }
-    const tabRow = this.mode === "session" ? 3 : 2;
-    const tab = this.tabHits.find((hit) => row === tabRow && col >= hit.start && col < hit.end);
-    if (tab && !this.isSearching()) {
-      this.activeTab = tab.index;
-      this.selected = 0;
-      this.detailsScroll = 0;
-      this.repaint();
-      return true;
-    }
-    const hit = this.rowHits.find((zone) => zone.row === row);
-    if (hit) {
-      const isStateClick = col >= hit.stateStart && col < hit.stateEnd;
-      if (isStateClick) {
-        this.selected = hit.index;
-        void this.toggleSelected();
-      } else {
-        this.selected = hit.index;
+    if (motion) return true;
+    if (!leftClick) return true;
+    if (overTabs && !this.isSearching()) {
+      const hit = this.tabHits.find((h) => innerCol >= h.start && innerCol < h.end);
+      if (hit) {
+        this.activeTab = hit.index;
+        this.selected = 0;
         this.detailsScroll = 0;
         this.repaint();
+        return true;
       }
+      const fallback = this.tabHits.find((h) => col >= h.start && col < h.end && row === this.tabRowStart);
+      if (fallback && !this.isSearching()) {
+        this.activeTab = fallback.index;
+        this.selected = 0;
+        this.detailsScroll = 0;
+        this.repaint();
+        return true;
+      }
+    }
+    if (overContent) {
+      const hoverId = this.hoverTest(contentLine, innerCol);
+      const hitId = hoverId ?? this.hitTest(contentLine, innerCol);
+      if (hitId !== undefined) {
+        const wasSelected = this.selected === hitId;
+        this.selected = hitId;
+        this.detailsScroll = 0;
+        if (wasSelected && hoverId !== undefined && !this.isSearching()) {
+          const tab = TABS[this.activeTab]!;
+          if (tab !== "activity") {
+            const st = this.stateStartsByLine[contentLine];
+            const isStateClick = st !== undefined && (innerCol >= st || col >= st) && innerCol >= 0;
+            // Only state-area clicks toggle; row-body clicks just select (like original stateStart check)
+            if (isStateClick) void this.toggleSelected();
+            else this.repaint();
+          } else this.repaint();
+        } else {
+          this.repaint();
+        }
+        return true;
+      }
+      // legacy absolute fallback for tests that use rowHits directly
+      const legacy = this.rowHits.find((zone) => zone.row === row);
+      if (legacy) {
+        const isStateClick = col >= legacy.stateStart && col < legacy.stateEnd;
+        const wasSelected = this.selected === legacy.index;
+        this.selected = legacy.index;
+        this.detailsScroll = 0;
+        if (wasSelected && isStateClick) void this.toggleSelected();
+        else if (wasSelected && legacy.stateStart === legacy.stateEnd) {
+          // no state col (activity) — second click shouldn't toggle
+          this.repaint();
+        } else if (isStateClick) void this.toggleSelected();
+        else this.repaint();
+        return true;
+      }
+    }
+    const legacy = this.rowHits.find((zone) => zone.row === row);
+    if (legacy) {
+      const wasSelected = this.selected === legacy.index;
+      this.selected = legacy.index;
+      this.detailsScroll = 0;
+      if (wasSelected) void this.toggleSelected();
+      else this.repaint();
     }
     return true;
   }
@@ -553,27 +651,20 @@ class SandboxPage implements PageComponent {
     let stateText: string;
     if (!overridden) stateText = effective ? "disabled" : "enabled";
     else stateText = `saved: ${saved ? "disabled" : "enabled"} → session: ${effective ? "disabled" : "enabled"}`;
-    // Add warning suffix for disabled safety-floor.
     const isWarning = rule.isSafetyFloor && effective;
     if (isWarning) stateText = `${stateText} · warning`;
-    const stateColor = effective ? (isWarning ? "warning" : "warning") : "success";
-    // For non-warning disabled, use warning color too to match spec disabled · warning only for safety floor.
     const coloredState = effective
       ? this.theme.fg(isWarning ? "warning" : "warning", stateText)
       : this.theme.fg("success", stateText);
-    // Layout: cursor + name left, state right aligned.
     const cursor = isSelected ? this.theme.fg("accent", ">") : " ";
     const left = `${cursor} ${rule.name}`;
-    // Reserve width for state aligned right with one space padding each side.
-    const plainStateLen = stateText.length;
+    const plainStateLen = visibleWidth(stateText);
     const availableForLeft = Math.max(0, width - plainStateLen - 4);
-    const leftClipped = clip(left, availableForLeft);
-    const pad = Math.max(1, width - leftClipped.length - plainStateLen - 1);
-    const lineRaw = `${leftClipped}${" ".repeat(pad)}${stateText}`;
+    const leftClipped = truncateToWidth(left, availableForLeft);
+    const pad = Math.max(1, width - visibleWidth(leftClipped) - plainStateLen - 1);
     const line = isSelected
-      ? this.theme.bg("selectedBg", `${this.theme.bold(leftClipped)}${" ".repeat(pad)}${coloredState}`)
-      : `${leftClipped}${" ".repeat(pad)}${coloredState}`;
-    // State column is at the right end.
+      ? this.theme.bg("selectedBg", `${this.theme.bold(leftClipped)}${padding(pad)}${coloredState}`)
+      : `${leftClipped}${padding(pad)}${coloredState}`;
     const stateStart = width - plainStateLen - 1;
     const stateEnd = width;
     return { line, stateStart, stateEnd };
@@ -582,10 +673,10 @@ class SandboxPage implements PageComponent {
   /** Renders an activity row: action · rule · tool · time */
   private renderActivityRow(entry: PolicyActivityEntry, isSelected: boolean, width: number): string {
     const label = `${entry.kind} · ${entry.rule} · ${entry.tool} · ${relativeTime(entry.at)}`;
-    const clipped = clip(label, width - 2);
+    const clipped = truncateToWidth(label, Math.max(0, width - 2));
     const cursor = isSelected ? this.theme.fg("accent", ">") : " ";
-    const row = `${cursor} ${clipped}`;
-    return isSelected ? this.theme.bg("selectedBg", this.theme.bold(row)) : row;
+    const rowStr = `${cursor} ${clipped}`;
+    return isSelected ? this.theme.bg("selectedBg", this.theme.bold(rowStr)) : rowStr;
   }
 
   /** Builds the details panel for a rule, in the spec order. */
@@ -598,91 +689,156 @@ class SandboxPage implements PageComponent {
     const stateLine = isWarning
       ? `${this.theme.fg("warning", "disabled · warning")}`
       : this.theme.fg(stateColor, stateText);
-    out.push(` State: ${stateLine}`);
-    out.push(` ${this.theme.fg("dim", rule.description)}`);
+    out.push(truncateToWidth(` State: ${stateLine}`, width));
+    // Full path to what's being edited — show config file and protected paths with absolute paths, not ~/.
+    out.push(truncateToWidth(` ${this.theme.fg("dim", `Config: ${this.configPath}`)}`, width));
+    // Description: 3 rows collapsed, full when expanded (ctrl+o)
+    const descLines = wrapTextWithAnsi(rule.description, Math.max(1, width - 4));
+    const useDesc = this.expanded ? descLines : descLines.slice(0, 3);
+    const paddedDesc = this.expanded ? useDesc : (() => { const a = useDesc.slice(0, 3); while (a.length < 3) a.push(""); return a; })();
+    for (let i = 0; i < paddedDesc.length; i++) {
+      const line = paddedDesc[i]!;
+      const styled = this.theme.fg("dim", line);
+      out.push(truncateToWidth(` ${styled}`, width));
+    }
+    if (!this.expanded && descLines.length > 3) {
+      out.push(truncateToWidth(` ${this.theme.fg("dim", `… ${descLines.length - 3} more lines (ctrl+o to expand)`)}`, width));
+    }
     const paths = protectedPathsForRule(rule, this.config);
     if (paths.length > 0) {
-      out.push(` ${this.theme.fg("muted", "Protected paths:")}`);
-      for (const p of paths) out.push(`  ${shortPath(p)}`);
+      out.push(truncateToWidth(` ${this.theme.fg("muted", "Protected paths:")}`, width));
+      // Show both short (~/) and full absolute for clarity; expandable shows all
+      const showPaths = this.expanded ? paths : paths.slice(0, 5);
+      for (const p of showPaths) out.push(truncateToWidth(`  ${shortPath(p)}  ${this.theme.fg("dim", `(${p})`)}`, width));
+      if (!this.expanded && paths.length > 5) {
+        out.push(truncateToWidth(`  ${this.theme.fg("dim", `… ${paths.length - 5} more (ctrl+o to expand)`)}`, width));
+      }
     }
-    out.push(` ${this.theme.fg("muted", "How to continue:")} ${rule.nextStep}`);
-    out.push(` ${this.theme.fg("dim", `Rule id: ${rule.id}`)}`);
-    // Clip details to width
-    return out.map((line) => clip(line, width));
+    out.push(truncateToWidth(` ${this.theme.fg("muted", "How to continue:")} ${rule.nextStep}`, width));
+    out.push(truncateToWidth(` ${this.theme.fg("dim", `Rule id: ${rule.id}`)}`, width));
+    return out.map((line) => truncateToWidth(line, width));
   }
-
   /** Builds the details panel for an activity entry. */
   private activityDetails(entry: PolicyActivityEntry, isCurrent: boolean, width: number): string[] {
     const out: string[] = [];
-    out.push(` Action: ${entry.kind}`);
-    out.push(` Rule: ${entry.rule || "—"}`);
-    out.push(` Tool: ${entry.tool || "—"}`);
-    out.push(` Time: ${relativeTime(entry.at)} (${new Date(entry.at).toLocaleString()})`);
-    out.push(` Session: ${isCurrent ? "Current session" : "Previous sessions"}`);
-    out.push(` Reason: ${entry.reason}`);
-    const previewText = entry.reason.length > 80 ? `${entry.reason.slice(0, 80)}…` : entry.reason;
-    out.push(` Preview: ${previewText}`);
-    return out.map((line) => clip(line, width));
+    out.push(truncateToWidth(` Action: ${entry.kind}`, width));
+    out.push(truncateToWidth(` Rule: ${entry.rule || "—"}`, width));
+    out.push(truncateToWidth(` Tool: ${entry.tool || "—"}`, width));
+    out.push(truncateToWidth(` Time: ${relativeTime(entry.at)} (${new Date(entry.at).toLocaleString()})`, width));
+    out.push(truncateToWidth(` Session: ${isCurrent ? "Current session" : "Previous sessions"}`, width));
+    out.push(truncateToWidth(` Config: ${this.configPath}`, width));
+    // Reason: collapsed 3 rows, expanded full with ctrl+o
+    const reasonLines = wrapTextWithAnsi(entry.reason, Math.max(1, width - 4));
+    const useReason = this.expanded ? reasonLines : reasonLines.slice(0, 3);
+    const paddedReason = this.expanded ? useReason : (() => { const a = useReason.slice(0, 3); while (a.length < 3) a.push(""); return a; })();
+    for (let i = 0; i < paddedReason.length; i++) {
+      const prefix = i === 0 ? " Reason: " : "         ";
+      out.push(truncateToWidth(`${prefix}${paddedReason[i]}`, width));
+    }
+    if (!this.expanded && reasonLines.length > 3) {
+      out.push(truncateToWidth(` ${this.theme.fg("dim", `… ${reasonLines.length - 3} more lines (ctrl+o to expand)`)}`, width));
+    }
+    const previewText = entry.reason.length > 80 && !this.expanded ? `${entry.reason.slice(0, 80)}…` : entry.reason;
+    const previewLabel = this.expanded ? "Full reason:" : "Preview:";
+    // When expanded, show full reason wrapped, not just 80 chars
+    if (this.expanded) {
+      const fullLines = wrapTextWithAnsi(entry.reason, Math.max(1, width - 4));
+      for (const l of fullLines) out.push(truncateToWidth(` ${l}`, width));
+    } else {
+      out.push(truncateToWidth(` ${previewLabel} ${previewText}`, width));
+    }
+    return out.map((line) => truncateToWidth(line, width));
   }
 
   /** Renders the page frame, returning a cached copy while unchanged. */
   render(width: number): readonly string[] {
     if (this.cache !== null && this.cache.width === width) return this.cache.lines;
 
-    const innerWidth = Math.max(20, width - 2);
-    const top = this.theme.fg("dim", `┌${"─".repeat(innerWidth)}┐`);
-    const bottom = this.theme.fg("dim", `└${"─".repeat(innerWidth)}┘`);
-    const side = this.theme.fg("dim", "│");
-    const lines: string[] = [];
+    const height = Math.max(14, (this.tui.terminal?.rows ?? 40) as number);
+    const innerWidth = Math.max(1, width - 4);
+
     this.rowHits.length = 0;
     this.tabHits.length = 0;
+    this.sidebarHitRows.length = 0;
+    this.hitRowsByLine.length = 0;
+    this.sidebarHitCol = 0;
 
+    const searching = this.isSearching();
     const title = this.mode === "session" ? "Session Sandbox" : "Sandbox";
-    lines.push(` ${this.theme.bold(this.theme.fg("accent", title))}`);
-    if (this.mode === "session") {
-      lines.push(` ${this.theme.fg("dim", "Session-only changes: saved rules stay unchanged")}`);
-    }
 
-    let tabLine = " ";
-    let col = 1;
-    for (let i = 0; i < TABS.length; i++) {
-      const tab = TABS[i]!;
-      const chip = ` ${TAB_ICONS[tab]} ${TAB_LABELS[tab]} `;
-      this.tabHits.push({ start: col, end: col + chip.length, index: i });
-      const styled = i === this.activeTab ? this.theme.bg("selectedBg", this.theme.bold(chip)) : this.theme.fg("muted", chip);
-      tabLine += styled + " ";
-      col += chip.length + 2;
-    }
-    lines.push(tabLine);
-    lines.push(this.theme.fg("dim", ` ${"─".repeat(innerWidth - 1)}`));
-
-    // Search field: visible, typing starts search.
-    const searchPlaceholder = this.theme.fg("dim", "Type to search rules and activity");
-    const searchContent = this.query === "" ? searchPlaceholder : this.theme.bold(this.query);
-    const grouped = this.isSearching() ? this.groupedHits() : [];
-    const matchInfo = this.isSearching() ? `${grouped.length} matches` : "";
-    const searchLine = this.query === ""
-      ? ` Search: ${searchPlaceholder}`
-      : ` Search: ${searchContent}${matchInfo ? `  ${this.theme.fg("dim", matchInfo)}` : ""}`;
-    lines.push(clip(searchLine, innerWidth));
-
-    // Summary lines
+    // Preview keeps summary + config full-path row so header stays host-verbatim.
     const totalRules = ruleRegistry().length;
     const savedEnabled = totalRules - this.savedDisabled.size;
     const effectiveDisabled = this.effectiveSet().size;
     const activeEnabled = totalRules - effectiveDisabled;
-    lines.push(` ${this.theme.fg("dim", `Saved rules: ${savedEnabled} enabled`)}`);
-    lines.push(` ${this.theme.fg("dim", `Active rules: ${activeEnabled} enabled`)}`);
+    const previewLines: string[] = [];
+    if (this.mode === "session") {
+      previewLines.push(this.theme.fg("dim", "Session-only changes: saved rules stay unchanged"));
+    }
+    previewLines.push(this.theme.fg("dim", `Saved rules: ${savedEnabled} enabled`));
+    previewLines.push(this.theme.fg("dim", `Active rules: ${activeEnabled} enabled`));
     if (this.sessionOverrides.size > 0) {
-      lines.push(` ${this.theme.fg("warning", "Session overrides active")}`);
+      previewLines.push(this.theme.fg("warning", "Session overrides active"));
+    }
+    const configLabel = `Config: ${this.configPath}`;
+    if (this.expanded) {
+      const wrapped = wrapTextWithAnsi(configLabel, innerWidth);
+      for (const line of wrapped) previewLines.push(this.theme.fg("dim", line));
+    } else {
+      previewLines.push(this.theme.fg("dim", truncateToWidth(configLabel, innerWidth)));
     }
 
-    // Content area
-    if (this.isSearching()) {
+    // Tab bar — single row, chips styled like Settings
+    let tabContent = " ";
+    let hitCol = 1;
+    for (let i = 0; i < TABS.length; i++) {
+      const tab = TABS[i]!;
+      const chip = ` ${TAB_ICONS[tab]} ${TAB_LABELS[tab]} `;
+      const chipWidth = visibleWidth(chip);
+      this.tabHits.push({ start: hitCol, end: hitCol + chipWidth, index: i });
+      let styled: string;
+      try {
+        styled = i === this.activeTab ? this.theme.bg("selectedBg", this.theme.bold(chip)) : this.theme.fg("muted", chip);
+      } catch {
+        styled = chip;
+      }
+      tabContent += styled + " ";
+      hitCol += chipWidth + 2;
+    }
+    const tabClipped = truncateToWidth(tabContent, innerWidth);
+    const tabLines = [tabClipped];
+
+    const fixedRows = 1 + tabLines.length + 1 + (searching ? 1 : 0) + 1 + 1 + 1;
+    const contentRows = Math.max(7, height - fixedRows - previewLines.length);
+
+    const out: string[] = [];
+    out.push(topBorder(width, title));
+    this.tabRowStart = out.length;
+    this.tabRowCount = tabLines.length;
+    for (const line of tabLines) out.push(row(line, width));
+    out.push(divider(width));
+    if (searching) {
+      const placeholder = this.theme.fg("dim", "Type to search rules and activity");
+      const content = this.query === "" ? placeholder : this.theme.bold(this.query);
+      const grouped = this.groupedHits();
+      const matchInfo = `${grouped.length} matches`;
+      const searchLine = this.query === ""
+        ? ` Search: ${placeholder}`
+        : ` Search: ${content}  ${this.theme.fg("dim", matchInfo)}`;
+      out.push(row(truncateToWidth(searchLine, innerWidth), width));
+    }
+    this.contentRowStart = out.length;
+    this.contentRowCount = contentRows;
+
+    const contentLines: string[] = [];
+    const hitRowsByLine: (number | undefined)[] = new Array(contentRows).fill(undefined);
+    const sidebarHitRowsByLine: (number | undefined)[] = new Array(contentRows).fill(undefined);
+    const stateStartsByLine: (number | undefined)[] = new Array(contentRows).fill(undefined);
+    if (searching) {
+      const grouped = this.groupedHits();
       if (grouped.length === 0) {
-        lines.push(` ${this.theme.fg("dim", "No matching rules or activity")}`);
+        contentLines.push(truncateToWidth(` ${this.theme.fg("dim", "No matching rules or activity")}`, innerWidth));
       } else {
-        // Grouped full-width results with headings.
         const groups: Record<string, GroupedHit[]> = {};
         for (const hit of grouped) {
           const key = hit.kind === "rule" ? (hit.group as string) : "activity";
@@ -690,55 +846,52 @@ class SandboxPage implements PageComponent {
         }
         const groupOrder: string[] = ["safety-floor", "prompt-classes", "path-policy", "activity"];
         let globalIndex = 0;
-        const listRows = this.pageSize();
         const windowStart = Math.min(
-          Math.max(0, this.selected - listRows + 2),
-          Math.max(0, grouped.length - listRows + 1),
+          Math.max(0, this.selected - contentRows + 2),
+          Math.max(0, grouped.length - contentRows + 1),
         );
-        let renderedGroups = 0;
         for (const g of groupOrder) {
           const hits = groups[g] ?? [];
           if (hits.length === 0) continue;
           const headingLabel =
-            g === "safety-floor"
-              ? "Safety floor"
-              : g === "prompt-classes"
-                ? "Prompt classes"
-                : g === "path-policy"
-                  ? "Path policy"
-                  : "Activity";
+            g === "safety-floor" ? "Safety floor" : g === "prompt-classes" ? "Prompt classes" : g === "path-policy" ? "Path policy" : "Activity";
           const groupStart = grouped.indexOf(hits[0]!);
           const groupEnd = grouped.indexOf(hits[hits.length - 1]!);
-          if (groupEnd < windowStart || groupStart >= windowStart + listRows) {
+          if (groupEnd < windowStart || groupStart >= windowStart + contentRows) {
             globalIndex += hits.length;
             continue;
           }
-          lines.push(` ${this.theme.bold(this.theme.fg("accent", headingLabel))}`);
+          const heading = this.theme.bold(this.theme.fg("accent", headingLabel));
+          if (contentLines.length < contentRows) {
+            contentLines.push(truncateToWidth(` ${heading}`, innerWidth));
+          }
           for (const hit of hits) {
-            if (globalIndex < windowStart || globalIndex >= windowStart + listRows) {
+            if (globalIndex < windowStart || globalIndex >= windowStart + contentRows) {
               globalIndex++;
               continue;
             }
             const isSelected = globalIndex === this.selected;
+            if (contentLines.length >= contentRows) { globalIndex++; continue; }
+            const lineIdx = contentLines.length;
             if (hit.kind === "rule") {
-              const { line, stateStart, stateEnd } = this.renderRuleRow(hit.rule, isSelected, innerWidth);
-              lines.push(line);
-              this.rowHits.push({ row: lines.length - 1, index: globalIndex, stateStart, stateEnd });
+              const { line, stateStart } = this.renderRuleRow(hit.rule, isSelected, innerWidth);
+              contentLines.push(truncateToWidth(line, innerWidth));
+              hitRowsByLine[lineIdx] = globalIndex;
+              stateStartsByLine[lineIdx] = stateStart;
             } else {
-              const row = this.renderActivityRow(hit.entry, isSelected, innerWidth);
-              lines.push(row);
-              this.rowHits.push({ row: lines.length - 1, index: globalIndex, stateStart: innerWidth, stateEnd: innerWidth });
+              const rowStr = this.renderActivityRow(hit.entry, isSelected, innerWidth);
+              contentLines.push(truncateToWidth(rowStr, innerWidth));
+              hitRowsByLine[lineIdx] = globalIndex;
             }
             globalIndex++;
           }
-          renderedGroups++;
         }
-        // Bottom explanation for selected result.
         const selected = grouped[this.selected];
-        if (selected) {
-          const explanation =
-            selected.kind === "rule" ? selected.rule.description : selected.entry.reason;
-          lines.push(` ${this.theme.fg("dim", clip(explanation, innerWidth - 2))}`);
+        if (selected && contentLines.length < contentRows) {
+          const explanation = selected.kind === "rule" ? selected.rule.description : selected.entry.reason;
+          const wrapped = wrapTextWithAnsi(explanation, Math.max(1, innerWidth - 4));
+          const preview = wrapped.slice(0, 3).join(" ");
+          contentLines.push(truncateToWidth(` ${this.theme.fg("dim", truncateToWidth(preview, innerWidth - 2))}`, innerWidth));
         }
       }
     } else {
@@ -747,112 +900,152 @@ class SandboxPage implements PageComponent {
         const merged = this.mergedActivity();
         const count = merged.length;
         if (this.selected >= count) this.selected = Math.max(0, count - 1);
-        const listRows = this.pageSize();
         const windowStart = Math.min(
-          Math.max(0, this.selected - listRows + 1),
-          Math.max(0, count - listRows),
+          Math.max(0, this.selected - contentRows + 1),
+          Math.max(0, count - contentRows),
         );
         if (count === 0) {
-          lines.push(` ${this.theme.fg("dim", "No recent activity — blocks and changes will appear here.")}`);
+          contentLines.push(truncateToWidth(` ${this.theme.fg("dim", "No recent activity — blocks and changes will appear here.")}`, innerWidth));
         } else {
-          // Two-column: left activity list, right details. For narrow terminals, stack.
-          const leftWidth = Math.floor((innerWidth - 3) / 2);
-          const rightWidth = innerWidth - leftWidth - 3;
-          const visible = merged.slice(windowStart, windowStart + listRows);
+          const sidebarWidth = sandboxSidebarWidth();
+          const paneWidth = innerWidth - sidebarWidth - 2;
+          const isFlat = paneWidth < 60;
+          let leftWidth: number;
+          let rightWidth: number;
+          if (isFlat) {
+            leftWidth = innerWidth;
+            rightWidth = 0;
+            this.sidebarHitCol = 0;
+          } else {
+            leftWidth = Math.floor((innerWidth - 3) / 2);
+            rightWidth = innerWidth - leftWidth - 3;
+            this.sidebarHitCol = 0;
+          }
+          const visible = merged.slice(windowStart, windowStart + contentRows);
           const selectedEntry = merged[this.selected];
-          const details = selectedEntry
-            ? this.activityDetails(selectedEntry.entry, selectedEntry.isCurrent, rightWidth)
-            : [];
-          const maxRows = Math.max(visible.length, details.length);
-          for (let i = 0; i < maxRows; i++) {
-            const idx = windowStart + i;
-            const isSel = idx === this.selected;
-            let left = "";
-            let rowHit: { row: number; index: number; stateStart: number; stateEnd: number } | null = null;
-            if (i < visible.length) {
+          const details = selectedEntry ? this.activityDetails(selectedEntry.entry, selectedEntry.isCurrent, Math.max(1, rightWidth)) : [];
+          const maxRows = isFlat ? visible.length : Math.max(visible.length, details.length);
+          if (isFlat) {
+            for (let i = 0; i < visible.length && contentLines.length < contentRows; i++) {
+              const idx = windowStart + i;
+              const isSel = idx === this.selected;
               const { entry } = visible[i]!;
-              left = this.renderActivityRow(entry, isSel, leftWidth).padEnd(leftWidth, " ");
-              rowHit = { row: lines.length, index: idx, stateStart: leftWidth, stateEnd: leftWidth };
-            } else {
-              left = " ".repeat(leftWidth);
+              const raw = this.renderActivityRow(entry, isSel, leftWidth);
+              contentLines.push(truncateToWidth(raw, innerWidth));
+              hitRowsByLine[contentLines.length - 1] = idx;
             }
-            const right = (details[i] ?? "").padEnd(rightWidth, " ");
-            const line = `${left} │ ${right}`;
-            const finalLine = isSel && i < visible.length ? this.theme.bg("selectedBg", line) : line;
-            lines.push(clip(finalLine, innerWidth));
-            if (rowHit) this.rowHits.push(rowHit);
+          } else {
+            for (let i = 0; i < maxRows && contentLines.length < contentRows; i++) {
+              const idx = windowStart + i;
+              const isSel = idx === this.selected;
+              let left = "";
+              if (i < visible.length) {
+                const { entry } = visible[i]!;
+                const raw = this.renderActivityRow(entry, isSel, leftWidth);
+                left = fit(raw, leftWidth);
+                hitRowsByLine[contentLines.length] = idx;
+              } else {
+                left = padding(leftWidth);
+              }
+              const right = fit(details[i] ?? "", rightWidth);
+              const sep = this.theme.fg("dim", "│ ");
+              const combined = truncateToWidth(left + sep + right, innerWidth);
+              const finalLine = isSel && i < visible.length ? this.theme.bg("selectedBg", combined) : combined;
+              contentLines.push(finalLine);
+            }
           }
         }
       } else {
         const list = this.visibleRules();
         const count = list.length;
         if (this.selected >= count) this.selected = Math.max(0, count - 1);
-        const listRows = this.pageSize();
         const windowStart = Math.min(
-          Math.max(0, this.selected - listRows + 1),
-          Math.max(0, count - listRows),
+          Math.max(0, this.selected - contentRows + 1),
+          Math.max(0, count - contentRows),
         );
         const selectedRule = list[this.selected];
-        const leftWidth = Math.floor((innerWidth - 3) / 2);
-        const rightWidth = innerWidth - leftWidth - 3;
-        // Render left list and right details side by side.
-        const visible = list.slice(windowStart, windowStart + listRows);
-        const details = selectedRule ? this.ruleDetails(selectedRule, rightWidth) : [];
-        const maxRows = Math.max(visible.length, details.length, 1);
-        if (count === 0) {
-          lines.push(` ${this.theme.fg("dim", "(no rules)")}`);
+        const sidebarWidth = sandboxSidebarWidth();
+        const paneWidth = innerWidth - sidebarWidth - 2;
+        const isFlat = paneWidth < 60;
+        let leftWidth: number;
+        let rightWidth: number;
+        if (isFlat) {
+          leftWidth = innerWidth;
+          rightWidth = 0;
+          this.sidebarHitCol = 0;
         } else {
-          for (let i = 0; i < maxRows; i++) {
+          leftWidth = Math.floor((innerWidth - 3) / 2);
+          rightWidth = innerWidth - leftWidth - 3;
+          this.sidebarHitCol = 0;
+        }
+        const visible = list.slice(windowStart, windowStart + contentRows);
+        const details = selectedRule ? this.ruleDetails(selectedRule, Math.max(1, isFlat ? innerWidth : rightWidth)) : [];
+        if (count === 0) {
+          contentLines.push(truncateToWidth(` ${this.theme.fg("dim", "(no rules)")}`, innerWidth));
+        } else if (isFlat) {
+          for (let i = 0; i < visible.length && contentLines.length < contentRows; i++) {
+            const idx = windowStart + i;
+            const rule = visible[i]!;
+            const isSel = idx === this.selected;
+            const rendered = this.renderRuleRow(rule, isSel, leftWidth);
+            contentLines.push(truncateToWidth(rendered.line, innerWidth));
+            hitRowsByLine[contentLines.length - 1] = idx;
+            stateStartsByLine[contentLines.length - 1] = rendered.stateStart;
+          }
+        } else {
+          const maxRows = Math.max(visible.length, details.length, 1);
+          for (let i = 0; i < maxRows && contentLines.length < contentRows; i++) {
             const idx = windowStart + i;
             const rule = visible[i];
             const isSel = idx === this.selected;
             let left = "";
-            let hit: { row: number; index: number; stateStart: number; stateEnd: number } | null = null;
             if (rule) {
               const rendered = this.renderRuleRow(rule, isSel, leftWidth);
-              left = rendered.line.padEnd(leftWidth, " ");
-              hit = { row: lines.length, index: idx, stateStart: rendered.stateStart, stateEnd: rendered.stateEnd };
+              left = fit(truncateToWidth(rendered.line, leftWidth), leftWidth);
+              hitRowsByLine[contentLines.length] = idx;
+              stateStartsByLine[contentLines.length] = rendered.stateStart;
             } else {
-              left = " ".repeat(leftWidth);
+              left = padding(leftWidth);
             }
-            const right = (details[i] ?? "").padEnd(rightWidth, " ");
-            const line = `${left} │ ${right}`;
-            lines.push(clip(line, innerWidth));
-            if (hit) this.rowHits.push(hit);
+            const right = fit(details[i] ?? "", rightWidth);
+            const sep = this.theme.fg("dim", "│ ");
+            const combined = truncateToWidth(left + sep + right, innerWidth);
+            contentLines.push(combined);
           }
         }
       }
     }
 
-    // Footer hints
-    let footer: string;
-    if (this.isSearching()) {
-      footer = "Type to search · Esc clear search · Enter select · ↑/↓ move";
-    } else if (this.mode === "session" && this.sessionOverrides.size > 0) {
-      footer = "Enter/Space change · Tab jump sections · ←/→ switch tabs · Type to search · Esc close · r reset session";
-    } else {
-      footer = "Enter/Space change · Tab jump sections · ←/→ switch tabs · Type to search · Esc close";
+    while (contentLines.length < contentRows) contentLines.push("");
+    const sliced = contentLines.slice(0, contentRows);
+    this.hitRowsByLine.length = 0;
+    this.sidebarHitRows.length = 0;
+    this.stateStartsByLine.length = 0;
+    for (let i = 0; i < contentRows; i++) {
+      this.hitRowsByLine[i] = hitRowsByLine[i];
+      this.sidebarHitRows[i] = sidebarHitRowsByLine[i];
+      this.stateStartsByLine[i] = stateStartsByLine[i];
     }
-    lines.push(this.theme.fg("dim", ` ${"─".repeat(innerWidth - 1)}`));
-    lines.push(` ${this.theme.fg("dim", clip(footer, innerWidth - 1))}`);
-
-    // Wrap with outer border and adjust hit coordinates for border offset.
-    const bordered: string[] = [];
-    bordered.push(top);
-    for (const line of lines) {
-      const padded = line.padEnd(innerWidth, " ");
-      // Ensure we don't exceed innerWidth before wrapping.
-      const clipped = clip(padded, innerWidth);
-      bordered.push(`${side}${clipped}${side}`);
+    this.rowHits.length = 0;
+    for (let i = 0; i < contentRows; i++) {
+      const idx = hitRowsByLine[i];
+      if (idx !== undefined) {
+        const s = stateStartsByLine[i] ?? innerWidth;
+        this.rowHits.push({ row: this.contentRowStart + i, index: idx, stateStart: s, stateEnd: s + 20 });
+      }
     }
-    bordered.push(bottom);
-    // Offset hits for the outer border (top row + left column).
-    for (const hit of this.rowHits) hit.row += 1;
-    for (const hit of this.tabHits) hit.start += 1;
-    for (const hit of this.tabHits) hit.end += 1;
+    for (let i = 0; i < contentRows; i++) {
+      out.push(row(sliced[i] ?? "", width));
+    }
+    for (const line of previewLines) out.push(row(line, width));
+    out.push(divider(width));
+    let footer = footerHintText(searching, this.mode, this.sessionOverrides.size > 0);
+    footer += " · ctrl+o";
+    out.push(row(this.theme.fg("dim", truncateToWidth(footer, innerWidth)), width));
+    out.push(bottomBorder(width));
 
-    this.cache = { width, lines: bordered };
-    return bordered;
+    this.cache = { width, lines: out };
+    return out;
   }
 }
 
@@ -956,6 +1149,21 @@ export function createSandboxHandler(
       c?.ui?.notify?.("pi-os-sandbox: /sandbox is terminal-only; run it in interactive mode.", "warning");
       return Promise.resolve();
     }
+    const isSession = mode === "session";
+    const overlayOptions = isSession
+      ? {
+          anchor: "bottom-center" as const,
+          width: "100%" as const,
+          maxHeight: "100%" as const,
+          margin: 0,
+        }
+      : {
+          anchor: "bottom-center" as const,
+          width: "100%" as const,
+          maxHeight: "100%" as const,
+          margin: 0,
+          fullscreen: true as const,
+        };
     return c.ui.custom<void>(
       (tui: TuiSurface, theme: Theme, keybindings: KeybindingsManager, done: (result: void) => void) =>
         new SandboxPage(
@@ -975,13 +1183,7 @@ export function createSandboxHandler(
         ),
       {
         overlay: true,
-        overlayOptions: {
-          anchor: "top-left",
-          width: "100%",
-          maxHeight: "100%",
-          margin: 0,
-          fullscreen: true,
-        },
+        overlayOptions,
       },
     );
   };
