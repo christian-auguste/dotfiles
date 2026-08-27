@@ -1009,19 +1009,30 @@ class SandboxPage implements PageComponent {
               hitRowsByLine[contentLines.length - 1] = idx;
             }
           } else {
+            const maxKind = Math.max(...visible.map((v) => visibleWidth(v.entry.kind)), 0);
+            const maxRuleRaw = Math.max(...visible.map((v) => visibleWidth(v.entry.rule)), 0);
+            const maxRule = Math.min(24, maxRuleRaw);
+            const maxTool = Math.max(...visible.map((v) => visibleWidth(v.entry.tool)), 0);
             for (let i = 0; i < maxRows && contentLines.length < contentRows; i++) {
               const idx = windowStart + i;
               const isSel = idx === this.selected;
               let left = "";
               if (i < visible.length) {
                 const { entry } = visible[i]!;
-                const raw = this.renderActivityRow(entry, isSel, leftWidth);
-                left = fit(raw, leftWidth);
+                const cursor = isSel ? this.theme.fg("accent", ">") : " ";
+                const kindPart = fit(truncateToWidth(entry.kind, maxKind), maxKind);
+                const rulePart = fit(truncateToWidth(entry.rule, maxRule), maxRule);
+                const toolPart = fit(truncateToWidth(entry.tool, maxTool), maxTool);
+                const timePart = relativeTime(entry.at);
+                const label = `${kindPart} · ${rulePart} · ${toolPart} · ${timePart}`;
+                const raw = `${cursor} ${truncateToWidth(label, Math.max(0, leftWidth - 2))}`;
+                const styled = isSel ? this.theme.bg("selectedBg", this.theme.bold(raw)) : raw;
+                left = fit(styled, leftWidth);
                 hitRowsByLine[contentLines.length] = idx;
               } else {
                 left = padding(leftWidth);
               }
-              const right = fit(details[i] ?? "", rightWidth);
+              const right = fit((details[i] ?? "").trimStart(), rightWidth);
               const sep = this.theme.fg("dim", "│ ");
               const combined = truncateToWidth(left + sep + right, innerWidth);
               contentLines.push(combined);
