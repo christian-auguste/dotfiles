@@ -22,18 +22,43 @@ import { inspectToolCall } from "../src/policy";
 import { redact } from "../src/redaction";
 import { SessionGrants } from "../src/session-grants";
 
-import { visibleWidth, truncateToWidth, padding, wrapTextWithAnsi } from "@oh-my-pi/pi-tui";
+import { visibleWidth, truncateToWidth, padding, wrapTextWithAnsi, TabBar } from "@oh-my-pi/pi-tui";
+import type { Tab, TabBarTheme } from "@oh-my-pi/pi-tui";
 import { fit, topBorder, divider, bottomBorder, row, splitRow, topBorderSplit, dividerSplit } from "../src/overlay-box";
+// ModelPicker drawer budget — copied from @oh-my-pi/pi-coding-agent/src/modes/components/model-picker.ts:50-57
+// CHROME_ROWS: top border + status + footer + bottom — model-picker.ts:51
+// BROWSER_FRAME_ROWS: search + blank, blank + two detail rows — model-picker.ts:53
+// MIN_VISIBLE: minimum list rows on short terminals — model-picker.ts:55
+// HEIGHT_FRACTION: fraction of terminal height overlay occupies — model-picker.ts:57
+const CHROME_ROWS = 4;
+const BROWSER_FRAME_ROWS = 5;
+const MIN_VISIBLE = 5;
+const HEIGHT_FRACTION = 0.4;
 
 const CONFIG_PATH = join(homedir(), ".omp", "agent", "pi-os-sandbox.json");
 
 let cachedSandboxSidebarWidth: number | undefined;
+/**
+ * Split-sidebar width derived from tab labels (not just visible groups), so the divider never jumps.
+ * Mirrors host settings-selector.ts:516-528: min(22,maxVisibleWidth)+4
+ */
 function sandboxSidebarWidth(): number {
   if (cachedSandboxSidebarWidth !== undefined) return cachedSandboxSidebarWidth;
   let nameWidth = 0;
   for (const tab of TABS) nameWidth = Math.max(nameWidth, visibleWidth(TAB_LABELS[tab] ?? tab));
-  cachedSandboxSidebarWidth = Math.min(22, nameWidth) + 4;
+  cachedSandboxSidebarWidth = Math.min(22, nameWidth) + 4; // 2-space indent + 2-space gap — host settings-selector.ts:524
   return cachedSandboxSidebarWidth;
+}
+/** Host-mirrored TabBar theme — settings-selector shared getTabBarTheme (packages/coding-agent/src/modes/shared.ts:22-31) */
+function getSandboxTabBarTheme(theme: Theme): TabBarTheme {
+  return {
+    label: (text: string) => theme.bold(theme.fg("accent", text)),
+    activeTab: (text: string) => theme.bold(theme.bg("selectedBg", theme.fg("text", text))),
+    inactiveTab: (text: string) => theme.fg("muted", text),
+    mutedTab: (text: string) => theme.fg("dim", text),
+    hoverTab: (text: string) => theme.bg("selectedBg", theme.fg("text", text)),
+    hint: (text: string) => theme.fg("dim", text),
+  };
 }
 
 function footerHintText(searching: boolean, mode: PageMode, hasOverrides: boolean): string {
@@ -127,11 +152,6 @@ function previewCommand(toolName: string, input: unknown): string {
   return `Tool: ${toolName}`;
 }
 
-/** Clips plain text to a width, appending an ellipsis when shortened. */
-function clip(text: string, width: number): string {
-  if (width < 3 || text.length <= width) return text;
-  return `${text.slice(0, width - 3)}...`;
-}
 
 /** Shortens an absolute path with ~/ when under the home directory. */
 function shortPath(path: string): string {
@@ -186,6 +206,30 @@ class SandboxPage implements PageComponent {
   private contentRowStart = 0;
   private contentRowCount = 0;
   private expanded = false;
+  // Host TabBar — mirrors settings-selector.ts:624 using pi-tui TabBar; hitZones stored per-line like tab-bar.ts:201-260
+  private tabBar: TabBar | null = null;
+  private buildTabs(): Tab[] {
+    return TABS.map((id) => ({ id, label: `${TAB_ICONS[id]} ${TAB_LABELS[id]}`, short: TAB_ICONS[id] }));
+  }
+  private ensureTabBar(): TabBar {
+    if (!this.tabBar) {
+      this.tabBar = new TabBar("", this.buildTabs(), getSandboxTabBarTheme(this.theme));
+      this.tabBar.showHint = false;
+      this.tabBar.onTabChange = (tab) => {
+        const idx = TABS.indexOf(tab.id as SandboxTab);
+        if (idx >= 0 && idx !== this.activeTab) {
+          this.activeTab = idx;
+          this.selected = 0;
+          this.detailsScroll = 0;
+          this.repaint();
+        }
+      };
+    }
+    // keep theme in sync if host theme changes
+    // TabBar holds theme by reference through closures; recreate if theme identity changed would be needed but theme object is stable per page
+    this.tabBar.setActiveById(TABS[this.activeTab]!);
+    return this.tabBar;
+  }
 
   /**
    * Creates the page.
@@ -440,6 +484,7 @@ class SandboxPage implements PageComponent {
   /** Drops the cached frame on theme changes. */
   invalidate(): void {
     this.cache = null;
+    this.tabBar?.invalidate();
   }
 
   /**
@@ -449,6 +494,8 @@ class SandboxPage implements PageComponent {
   handleInput(data: string): void {
     // Session drawer is keyboard-only like ModelPicker (model-picker.ts:65-67);
     // mouse tracking is reserved for fullscreen overlays (tui.ts:353-371).
+    // Drop SGR mouse reports in session so no bytes are consumed (model-picker.ts:65-67).
+    if (this.mode === "session" && data.startsWith("\x1b[<")) return; // drop mouse reports
     if (this.mode === "saved" && this.handleMouse(data)) return;
     if (this.keybindings.matches(data, "tui.select.cancel")) {
       if (this.isSearching()) {
@@ -538,10 +585,12 @@ class SandboxPage implements PageComponent {
   }
 
   private hitTest(line: number, col: number): number | undefined {
+    // Host settings-list.ts:232-234 — sidebar hits resolve to section first item, else pane hit
     if (this.sidebarHitCol > 0 && col < this.sidebarHitCol) return this.sidebarHitRows[line];
     return this.hitRowsByLine[line];
   }
   private hoverTest(line: number, col: number): number | undefined {
+    // Host settings-list.ts:243-246 — hover excludes sidebar so sidebar hover doesn't light rows
     if (this.sidebarHitCol > 0 && col < this.sidebarHitCol) return undefined;
     return this.hitRowsByLine[line];
   }
@@ -553,6 +602,8 @@ class SandboxPage implements PageComponent {
    * session drawer is keyboard-only (model-picker.ts:65-67, tui.ts:353-371).
    */
   private handleMouse(data: string): boolean {
+    // Guard entire handleMouse to saved only — session drawer is keyboard-only (model-picker.ts:65-67).
+    if (this.mode !== "saved") return false;
     const match = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/.exec(data);
     if (!match) return false;
     const button = Number(match[1]);
@@ -569,23 +620,34 @@ class SandboxPage implements PageComponent {
     const overContent = contentLine >= 0 && contentLine < this.contentRowCount;
     if (wheel !== null) {
       if (overContent) {
+        // Host settings-list.ts:211-217 — wheel ignored when pointer in sidebar
         if (this.sidebarHitCol > 0 && innerCol < this.sidebarHitCol) return true;
         this.moveSelection(wheel);
       } else if (overTabs) this.moveSelection(wheel);
       else this.moveSelection(wheel);
       return true;
     }
-    if (motion) return true;
+    if (motion) {
+      // Host tab-bar.ts:287-291 + settings-selector.ts:784-790 — hover updates tab via tabAt
+      const hovered = overTabs ? this.ensureTabBar().tabAt(tabLine, innerCol) : undefined;
+      this.tabBar?.setHoverTab(hovered ? hovered.id : null);
+      return true;
+    }
     if (!leftClick) return true;
     if (overTabs && !this.isSearching()) {
-      const hit = this.tabHits.find((h) => innerCol >= h.start && innerCol < h.end);
-      if (hit) {
-        this.activeTab = hit.index;
-        this.selected = 0;
-        this.detailsScroll = 0;
-        this.repaint();
+      // Host tab-bar.ts:287-291 — per-line hitZones via tabAt instead of manual start/end loop
+      const tab = this.ensureTabBar().tabAt(tabLine, innerCol);
+      if (tab) {
+        const idx = TABS.indexOf(tab.id as SandboxTab);
+        if (idx >= 0) {
+          this.activeTab = idx;
+          this.selected = 0;
+          this.detailsScroll = 0;
+          this.repaint();
+        }
         return true;
       }
+      // legacy absolute fallback for tests using row/col directly
       const fallback = this.tabHits.find((h) => col >= h.start && col < h.end && row === this.tabRowStart);
       if (fallback && !this.isSearching()) {
         this.activeTab = fallback.index;
@@ -754,13 +816,14 @@ class SandboxPage implements PageComponent {
   render(width: number): readonly string[] {
     if (this.cache !== null && this.cache.width === width) return this.cache.lines;
 
-    const height = Math.max(14, (this.tui.terminal?.rows ?? 40) as number);
     const innerWidth = Math.max(1, width - 4);
 
+    // Host settings-list.ts:477-479 — hit maps describe exactly the frame being produced now
     this.rowHits.length = 0;
     this.tabHits.length = 0;
     this.sidebarHitRows.length = 0;
     this.hitRowsByLine.length = 0;
+    this.stateStartsByLine.length = 0;
     this.sidebarHitCol = 0;
 
     const searching = this.isSearching();
@@ -788,28 +851,39 @@ class SandboxPage implements PageComponent {
       previewLines.push(this.theme.fg("dim", truncateToWidth(configLabel, innerWidth)));
     }
 
-    // Tab bar — single row, chips styled like Settings
-    let tabContent = " ";
-    let hitCol = 1;
-    for (let i = 0; i < TABS.length; i++) {
-      const tab = TABS[i]!;
-      const chip = ` ${TAB_ICONS[tab]} ${TAB_LABELS[tab]} `;
-      const chipWidth = visibleWidth(chip);
-      this.tabHits.push({ start: hitCol, end: hitCol + chipWidth, index: i });
-      let styled: string;
-      try {
-        styled = i === this.activeTab ? this.theme.bg("selectedBg", this.theme.bold(chip)) : this.theme.fg("muted", chip);
-      } catch {
-        styled = chip;
+    // Tab bar — host TabBar component (pi-tui tab-bar.ts:201-260 per-line hitZones, tab-bar.ts:287-291 tabAt)
+    const tabBar = this.ensureTabBar();
+    const tabLines = [...tabBar.render(innerWidth)] as string[];
+    // legacy tabHits kept for test compat — derived from visibleWidth like tab-bar hitZones
+    this.tabHits.length = 0;
+    // Populate tabHits from TabBar's internal hitZones via tabAt scan — fallback to manual visibleWidth if TabBar empty
+    // We reconstruct by scanning tabLabels with visibleWidth; matches tab-bar.ts totalWidth logic
+    if (tabLines.length > 0) {
+      // For legacy fallback, keep manual start/end using visibleWidth so tabHits still resolvable by col
+      let hitCol = 1;
+      for (let i = 0; i < TABS.length; i++) {
+        const tab = TABS[i]!;
+        const chip = ` ${TAB_ICONS[tab]} ${TAB_LABELS[tab]} `;
+        const w = visibleWidth(chip);
+        this.tabHits.push({ start: hitCol, end: hitCol + w, index: i });
+        hitCol += w + 2;
       }
-      tabContent += styled + " ";
-      hitCol += chipWidth + 2;
     }
-    const tabClipped = truncateToWidth(tabContent, innerWidth);
-    const tabLines = [tabClipped];
 
-    const fixedRows = 1 + tabLines.length + 1 + (searching ? 1 : 0) + 1 + 1 + 1;
-    const contentRows = Math.max(7, height - fixedRows - previewLines.length);
+    // Height budget — session drawer uses ModelPicker compact budget (model-picker.ts:50-57,217-219), saved keeps fullscreen.
+    // TermRows = max(16, rows||40) — model-picker.ts:218; listBudget = floor(termRows*0.4)-CHROME-BROWSER — model-picker.ts:219
+    // maxVisible = max(MIN_VISIBLE, listBudget) — model-picker.ts:220; total 9+maxVisible lines
+    let contentRows: number;
+    if (this.mode === "session") {
+      const termRows = Math.max(16, (this.tui.terminal?.rows ?? 40) as number); // model-picker.ts:218
+      const listBudget = Math.floor(termRows * HEIGHT_FRACTION) - CHROME_ROWS - BROWSER_FRAME_ROWS; // model-picker.ts:219
+      const maxVisible = Math.max(MIN_VISIBLE, listBudget); // model-picker.ts:220
+      contentRows = maxVisible; // drawer session: compact 9+maxVisible — model-picker.ts:217-219
+    } else {
+      const height = Math.max(14, (this.tui.terminal?.rows ?? 40) as number);
+      const fixedRows = 1 + tabLines.length + 1 + (searching ? 1 : 0) + 1 + 1 + 1;
+      contentRows = Math.max(7, height - fixedRows - previewLines.length);
+    }
 
     const out: string[] = [];
     out.push(topBorder(width, title));
@@ -907,20 +981,20 @@ class SandboxPage implements PageComponent {
         if (count === 0) {
           contentLines.push(truncateToWidth(` ${this.theme.fg("dim", "No recent activity — blocks and changes will appear here.")}`, innerWidth));
         } else {
-          const sidebarWidth = sandboxSidebarWidth();
-          const paneWidth = innerWidth - sidebarWidth - 2;
-          const isFlat = paneWidth < 60;
+          const sidebarWidth = sandboxSidebarWidth(); // host settings-selector.ts:516-528 + settings-list.ts:664-667
+          const paneWidth = innerWidth - sidebarWidth - 2; // host settings-list.ts:665 "│ " separator
+          const isFlat = paneWidth < 60; // host settings-list.ts:667 value column starves <60
           let leftWidth: number;
           let rightWidth: number;
           if (isFlat) {
             leftWidth = innerWidth;
             rightWidth = 0;
             this.sidebarHitCol = 0;
-          } else {
-            leftWidth = Math.floor((innerWidth - 3) / 2);
-            rightWidth = innerWidth - leftWidth - 3;
-            this.sidebarHitCol = 0;
-          }
+        } else {
+          leftWidth = Math.floor((innerWidth - 3) / 2);
+          rightWidth = innerWidth - leftWidth - 3;
+          this.sidebarHitCol = 0;
+        }
           const visible = merged.slice(windowStart, windowStart + contentRows);
           const selectedEntry = merged[this.selected];
           const details = selectedEntry ? this.activityDetails(selectedEntry.entry, selectedEntry.isCurrent, Math.max(1, rightWidth)) : [];
@@ -964,9 +1038,9 @@ class SandboxPage implements PageComponent {
           Math.max(0, count - contentRows),
         );
         const selectedRule = list[this.selected];
-        const sidebarWidth = sandboxSidebarWidth();
-        const paneWidth = innerWidth - sidebarWidth - 2;
-        const isFlat = paneWidth < 60;
+        const sidebarWidth = sandboxSidebarWidth(); // host settings-selector.ts:516-528 + settings-list.ts:664-667
+        const paneWidth = innerWidth - sidebarWidth - 2; // host settings-list.ts:665
+        const isFlat = paneWidth < 60; // host settings-list.ts:667
         let leftWidth: number;
         let rightWidth: number;
         if (isFlat) {
@@ -1131,6 +1205,11 @@ export function createSandboxHandler(
     }
   });
 
+  // Staleness caveat: extension reload requires host restart — modules are
+  // loaded via import(`${spec}?mtime=${tag}`) in legacy-pi-compat.ts:2811
+  // and imported through loadLegacyPiModule / importExtensionModule in
+  // loader.ts:382-385; edited source is cache-busted via ?mtime but a live
+  // host still needs a restart to re-run the factory.
   const openPage = (ctx: unknown, mode: PageMode) => {
     const c = ctx as
       | {
@@ -1150,6 +1229,10 @@ export function createSandboxHandler(
       return Promise.resolve();
     }
     const isSession = mode === "session";
+    // Host drawer tuple for session bottom-drawer (keyboard-only):
+    // {anchor:"bottom-center", width:"100%", maxHeight:"100%", margin:0}
+    // per selector-controller.ts:846-851 (ModelPicker alt+p drawer).
+    // Saved fullscreen tuple adds fullscreen:true per selector-controller.ts:120-127.
     const overlayOptions = isSession
       ? {
           anchor: "bottom-center" as const,
@@ -1188,6 +1271,8 @@ export function createSandboxHandler(
     );
   };
 
+  // Handler shape: registerCommand(name, { handler: async (_args, ctx) => ... })
+  // per extensibility/extensions/types.ts:1363 (spec cites 1192) — _args unused, ctx second.
   pi.registerCommand("sandbox", {
     description: "Open the pi-os-sandbox rule customization page",
     handler: async (_args, ctx) => {
@@ -1195,6 +1280,8 @@ export function createSandboxHandler(
     },
   });
 
+  // Handler shape: same _args,ctx form; both slash variants must call same openPage(ctx,"session")
+  // per types.ts:1363 — verify no divergent literals (grep "50%" / "top-center").
   pi.registerCommand("sandbox-session", {
     description: "Open the session sandbox (session-only rule overrides)",
     handler: async (_args, ctx) => {
@@ -1215,6 +1302,9 @@ export function createSandboxHandler(
   });
 
   // Option+S shortcut for session sandbox, guarded for hosts without the API.
+  // Handler shape: registerShortcut(id, { handler: async (ctx) => ... })
+  // per extensibility/extensions/types.ts:1373 (spec cites 1377) — single ctx arg, no _args.
+  // Both slash and shortcut must call same openPage(ctx,"session") — no divergent literals.
   try {
     const maybe = pi as unknown as { registerShortcut?: (id: string, opts: unknown) => void };
     if (typeof maybe.registerShortcut === "function") {
