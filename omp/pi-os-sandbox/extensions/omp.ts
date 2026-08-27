@@ -1024,8 +1024,7 @@ class SandboxPage implements PageComponent {
               const right = fit(details[i] ?? "", rightWidth);
               const sep = this.theme.fg("dim", "│ ");
               const combined = truncateToWidth(left + sep + right, innerWidth);
-              const finalLine = isSel && i < visible.length ? this.theme.bg("selectedBg", combined) : combined;
-              contentLines.push(finalLine);
+              contentLines.push(combined);
             }
           }
         }
