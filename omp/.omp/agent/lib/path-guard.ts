@@ -29,7 +29,7 @@ export function canonicalize(value: string): string {
   for (;;) {
     try {
       let result = realpathSync(current);
-      for (let i = suffix.length - 1; i >= 0; i--) result = path.join(result, suffix[i]);
+      for (const part of suffix) result = path.join(result, part);
       return result;
     } catch {
       const parent = path.dirname(current);

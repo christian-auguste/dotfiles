@@ -1,0 +1,10 @@
+{
+  "name": "@learning/visual-tools",
+  "version": "0.1.0",
+  "description": "OMP custom tools for authoring and rendering Mermaid and SVG diagrams.",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@mermaid-js/mermaid-cli": "^11.4.2"
+  }
+}

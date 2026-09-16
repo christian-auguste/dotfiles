@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { AutocompleteItem } from "@oh-my-pi/pi-tui";
-import { normalizeMessage, normalizeToolCall, normalizeToolResult, type MdLogEvent } from "../lib/event-model";
+import { normalizeMessage, normalizeToolCall, normalizeToolExecutionUpdate, normalizeToolResult, type MdLogEvent } from "../lib/event-model";
 import { appendLogBlock, ensureMarkdownFile, fileExists, findFrontMatterTarget, MARKER_KEY, readMarker, readText, upsertFrontMatter, writeArtifact } from "../lib/log-file";
 import { readConfig, writeConfig } from "../lib/md-log-config";
 import { renderCallout } from "../lib/log-renderer";
@@ -25,7 +25,10 @@ export default function registerMdLog(pi: ExtensionAPI): void {
   const sessionId = (ctx: ExtensionContext) => ctx.sessionManager.getSessionId();
   const branch = (ctx: ExtensionContext) => ctx.sessionManager.getBranch() as unknown as Entry[];
   const persist = () => { if (state) pi.appendEntry(MD_LOG_STATE_TYPE, serializeState(state)); };
-  const enqueue = (work: () => Promise<void>) => { queue = queue.then(work).catch((error) => pi.logger.error(`[md-log] ${String(error)}`)); };
+  const enqueue = (work: () => Promise<void>): Promise<void> => {
+    queue = queue.then(work).catch((error) => pi.logger.error(`[md-log] ${String(error)}`));
+    return queue;
+  };
 
   async function restore(ctx: ExtensionContext): Promise<void> {
     state = reconstructState(branch(ctx)) ?? emptyState(sessionId(ctx));
@@ -147,8 +150,15 @@ export default function registerMdLog(pi: ExtensionAPI): void {
       for (const item of normalizeMessage(id, message as never)) enqueue(() => append(ctx, item));
     }
   });
-  pi.on("tool_call", async (event, ctx) => { for (const item of normalizeToolCall(event)) enqueue(() => append(ctx, item)); });
-  pi.on("tool_result", async (event, ctx) => { for (const item of normalizeToolResult(event)) enqueue(() => append(ctx, item)); });
+  pi.on("tool_call", async (event, ctx) => {
+    for (const item of normalizeToolCall(event)) await enqueue(() => append(ctx, item));
+  });
+  pi.on("tool_execution_update", async (event, ctx) => {
+    for (const item of normalizeToolExecutionUpdate(event)) await enqueue(() => append(ctx, item));
+  });
+  pi.on("tool_result", async (event, ctx) => {
+    for (const item of normalizeToolResult(event)) await enqueue(() => append(ctx, item));
+  });
   pi.on("session_shutdown", async () => { await queue; });
 
   pi.registerCommand("md-log", {
