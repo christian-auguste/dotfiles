@@ -16,6 +16,7 @@ export default function registerMdLog(pi: ExtensionAPI): void {
   let vaultRoot: string | null = null;
   let appendErrorNotified = false;
   let queue: Promise<void> = Promise.resolve();
+  let bindingGeneration = 0;
   const permissionMessage = (target: string) =>
     `md-log: permission denied accessing ${target}; grant the terminal Files & Folders access in System Settings > Privacy & Security`;
   const isPermissionError = (error: unknown) => {
@@ -57,11 +58,12 @@ export default function registerMdLog(pi: ExtensionAPI): void {
     }
   }
 
-  async function append(ctx: ExtensionContext, event: MdLogEvent): Promise<void> {
-    if (!state?.boundPath || state.seenIds.includes(event.id)) return;
+  async function append(ctx: ExtensionContext, event: MdLogEvent, generation = bindingGeneration): Promise<void> {
+    const boundPath = state?.boundPath;
+    if (!boundPath || generation !== bindingGeneration || state?.seenIds.includes(event.id)) return;
     // Real containment check: the old assertExactBoundPath(boundPath, boundPath)
     // compared a path with itself and never failed. Reuse the bind-time bouncer.
-    if (vaultRoot && resolveBoundPath(vaultRoot, state.boundPath).error) return;
+    if (vaultRoot && resolveBoundPath(vaultRoot, boundPath).error) return;
     try {
       if (event.kind === "artifact") {
         if (!vaultRoot) return;
@@ -69,30 +71,38 @@ export default function registerMdLog(pi: ExtensionAPI): void {
         if (!embedPath) return;
         event = { ...event, embedPath };
       }
-      await appendLogBlock(state.boundPath, renderCallout(event));
+      await appendLogBlock(boundPath, renderCallout(event));
     } catch (error) {
+      if (generation !== bindingGeneration || state?.boundPath !== boundPath) return;
       if (!isPermissionError(error)) throw error;
       if (!appendErrorNotified) {
         appendErrorNotified = true;
-        ctx.ui.notify(permissionMessage(state.boundPath), "error");
+        ctx.ui.notify(permissionMessage(boundPath), "error");
       }
       return; // entry stays unseen; next backfill retries once access is granted
     }
+    if (generation !== bindingGeneration || state?.boundPath !== boundPath) return;
     appendErrorNotified = false;
     state.seenIds = pushSeen(state.seenIds, event.id);
     state.cursor++;
     persist();
   }
 
+  const schedule = (ctx: ExtensionContext, event: MdLogEvent): Promise<void> => {
+    const generation = bindingGeneration;
+    return enqueue(() => append(ctx, event, generation));
+  };
+
   async function backfill(ctx: ExtensionContext): Promise<number> {
     if (!state?.boundPath) return 0;
+    const generation = bindingGeneration;
     const existing = await readText(state.boundPath);
     if (state.cursor === 0 && existing?.includes("> [!")) return 0;
     let count = 0;
     for (const entry of branch(ctx)) {
       if (entry.type !== "message" || !entry.message) continue;
       for (const event of normalizeMessage("entry:" + entry.id, entry.message as never)) {
-        if (!state.seenIds.includes(event.id)) { await append(ctx, event); count++; }
+        if (!state.seenIds.includes(event.id)) { await append(ctx, event, generation); count++; }
       }
     }
     return count;
@@ -147,17 +157,17 @@ export default function registerMdLog(pi: ExtensionAPI): void {
     const message = event.message;
     if (message.role === "user" || message.role === "assistant") {
       const id = branch(ctx).filter((entry) => entry.type === "message").at(-1)?.id ?? "live:" + Date.now();
-      for (const item of normalizeMessage(id, message as never)) enqueue(() => append(ctx, item));
+      for (const item of normalizeMessage(id, message as never)) schedule(ctx, item);
     }
   });
   pi.on("tool_call", async (event, ctx) => {
-    for (const item of normalizeToolCall(event)) await enqueue(() => append(ctx, item));
+    for (const item of normalizeToolCall(event)) await schedule(ctx, item);
   });
   pi.on("tool_execution_update", async (event, ctx) => {
-    for (const item of normalizeToolExecutionUpdate(event)) await enqueue(() => append(ctx, item));
+    for (const item of normalizeToolExecutionUpdate(event)) await schedule(ctx, item);
   });
   pi.on("tool_result", async (event, ctx) => {
-    for (const item of normalizeToolResult(event)) await enqueue(() => append(ctx, item));
+    for (const item of normalizeToolResult(event)) await schedule(ctx, item);
   });
   pi.on("session_shutdown", async () => { await queue; });
 
@@ -228,7 +238,7 @@ export default function registerMdLog(pi: ExtensionAPI): void {
         ctx.ui.notify(permissionMessage(resolved.path), "error");
         return;
       }
-      appendErrorNotified = false;
+      bindingGeneration++;
       state = { version: 1, boundPath: resolved.path, cursor: same ? state?.cursor ?? 0 : 0, seenIds: same ? state?.seenIds ?? [] : [], sessionId: sessionId(ctx), logId: marker, vaultRoot };
       persist();
       const count = await backfill(ctx);
