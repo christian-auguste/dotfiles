@@ -2,82 +2,119 @@
 
 Personal shell and terminal configuration managed with [GNU Stow](https://www.gnu.org/software/stow/).
 
-## Requirements
+## New machine setup
 
-- [Homebrew](https://brew.sh)
-- Zsh
+Set your global Git identity. Replace the placeholders with your own name and email:
+
+```sh
+git config --global user.name "Your Name"
+git config --global user.email "you@example.com"
+git config --global --get-regexp '^user\.(name|email)$'
+```
+
+Git identity labels commits. SSH authentication lets GitHub verify your access. They are separate settings. Set a different identity for one repository from inside its directory:
+
+```sh
+git config user.name "Work Name"
+git config user.email "you@work.example"
+```
+
+Create an SSH key and display its public key:
+
+```sh
+ssh-keygen -t ed25519 -C "you@example.com"
+cat ~/.ssh/id_ed25519.pub
+```
+
+Add the displayed key under [GitHub SSH keys](https://github.com/settings/keys). Keep the private key (`~/.ssh/id_ed25519`) secret. Then test the connection:
+
+```sh
+ssh -T git@github.com
+```
+
+See [GitHub's SSH key guide](https://docs.github.com/en/authentication/connecting-to-github-with-ssh) and [Git's identity settings](https://git-scm.com/book/en/v2/Getting-Started-First-Time-Git-Setup).
 
 ## Install
 
-macOS or Linux, one command:
+Clone this repository with SSH after you add and test your key:
 
-```zsh
+```sh
 git clone git@github.com:christian-auguste/dotfiles.git ~/dotfiles
+```
+
+### macOS
+
+Run the installer. It installs Homebrew if needed, installs the [Brewfile](./Brewfile) packages, installs Pi, stows the dotfiles, wires the shared zsh files, and installs TPM.
+
+```sh
 ~/dotfiles/install.sh
 ```
 
-`install.sh` is idempotent (safe to re-run). It installs Homebrew if missing,
-runs `brew bundle` against the [Brewfile](./Brewfile), installs the standalone
-Pi CLI from npm, creates the XDG dirs the zsh config expects, `stow`s the
-packages the dotfiles own, wires the shared shell files (see Notes → coexist),
-and clones TPM. On Linux the macOS casks/fonts in the Brewfile are skipped
-automatically.
+The Pi Ollama local-search package installs by default on macOS to preserve the existing setup.
 
-Finish tmux setup: open tmux and press `` ` `` then `I` to install plugins.
+### Ubuntu
 
-Configure omp separately, because it needs omp installed *and* launched once —
-the setup wizard writes `config.yml` before this script can edit it:
+On Ubuntu, the installer uses APT for system tools (`stow`, `zoxide`, `fzf`, `fd-find`, `eza`, `bat`, `ripgrep`, `tmux`, `cloc`, `nodejs`, `npm`, `git-lfs`, `pipx`, `ruby`, `graphviz`, `unison`, `ruff`, and `rust-analyzer`), plus `xclip` and `wl-clipboard`. It installs Starship through its official Linux installer, and OMP and Herdr through their official Linux installers. Interactive prompts default to yes for Visual Studio Code, Ghostty, and FiraMono Nerd Font, and no for Pi local search. In non-interactive runs those same defaults apply without prompting. Set `INSTALL_PI_OLLAMA=1` to enable local search without the prompt. The installer also sets zsh as your login shell, stows the dotfiles, wires the shared zsh files, and installs TPM.
 
-```zsh
+```sh
+~/dotfiles/install.sh
+```
+
+By default, Ubuntu selects Visual Studio Code, Ghostty, and FiraMono Nerd Font; Pi local search is opt-in. To install Pi local search with Ollama, set:
+
+```sh
+INSTALL_PI_OLLAMA=1 ~/dotfiles/install.sh
+```
+
+This installs Ollama and `nomic-embed-text`, and stows the separate `pi-ollama` package. The `pi` command installs through Bun if missing.
+
+The installer uses Microsoft's signed APT repository for VS Code. Ghostty uses Ubuntu's APT package on 26.04; on 24.04 it offers the `ppa:mkasberg/ghostty` community PPA, which is added only after explicit consent (the prompt defaults to no). FiraMono Nerd Font v3.5.1 installs under `~/.local/share/fonts`. The installer uses mise to install Node 22 and the TypeScript and VS Code language servers, pipx for basedpyright, and upstream installers for Starship, Bun, OMP, Herdr, and Ollama when Pi local search is selected.
+
+The only deliberate Ubuntu package skip is `tlrc`, because no Ubuntu install route is configured. If mise or its Node 22 install fails, the installer reports the language-server install as skipped; if Bun is unavailable, it reports the Pi CLI install as skipped.
+
+Open tmux and press `` ` `` then `I` to install plugins.
+
+Configure omp separately. It must be installed and launched once so its setup wizard can write `config.yml` before this script edits it:
+
+```sh
 omp                    # let the wizard run, then quit
 ~/dotfiles/setup-omp.sh
 ```
 
-The standalone `pi` command and OMP's `omp` command can coexist. Pi's tracked
-configuration is `pi/.pi/` and is applied by the normal Stow step; launch `pi`
-once after installation so it can install the packages listed in
-`~/.pi/agent/settings.json`.
+The standalone `pi` command and OMP's `omp` command can coexist. Pi's tracked configuration is `pi/.pi/` and is applied by the normal Stow step. Launch `pi` once after installation so it can install the packages listed in `~/.pi/agent/settings.json`.
 
-`setup-omp.sh` is idempotent too. It sets only the settings that differ from
-omp's own defaults, installs the Kiro provider plugin, and never deletes keys —
-anything it does not mention resolves from omp's schema at read time.
+`setup-omp.sh` is idempotent. It sets only settings that differ from omp's defaults, installs the Kiro provider plugin, and never deletes keys. Any setting it does not mention resolves from omp's schema at read time.
 
 <details>
-<summary>Manual steps (what install.sh does)</summary>
+<summary>Manual steps shared by both installers</summary>
 
-```zsh
-# 1. Homebrew (if missing), then load it into the shell
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-eval "$(/opt/homebrew/bin/brew shellenv)"          # Linux: /home/linuxbrew/.linuxbrew/bin/brew
-
-# 2. Packages
-brew bundle --file=~/dotfiles/Brewfile
-
-# 2b. Standalone Pi CLI (npm, not Homebrew)
-npm install --global --ignore-scripts @earendil-works/pi-coding-agent
-
-# 3. Required directories
+```sh
+# Create directories the zsh config expects
 mkdir -p ~/.local/state/zsh ~/.cache/zsh
 
-# 4. Stow the packages the dotfiles own
-cd ~/dotfiles && stow */
+# macOS: include pi-ollama with the default packages
+cd ~/dotfiles && stow agents ghostty herdr omp pi pi-ollama starship tmux zsh
 
-# 5. Wire the shared shell files (coexist — appends a fenced block, backs up first)
+# Ubuntu: omit optional pi-ollama unless selected
+cd ~/dotfiles && stow agents ghostty herdr omp pi starship tmux zsh
+# selected Ubuntu setup:
+cd ~/dotfiles && stow agents ghostty herdr omp pi pi-ollama starship tmux zsh
+
+# Wire the shared shell files (appends fenced blocks and backs up first)
 printf '\n# >>> christian dotfiles >>>\nexport XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"\n[ -f "$XDG_CONFIG_HOME/zsh/.zshenv" ] && source "$XDG_CONFIG_HOME/zsh/.zshenv"\n[ -f "$HOME/.zshenv.local" ] && source "$HOME/.zshenv.local"\n# <<< christian dotfiles <<<\n' >> ~/.zshenv
 printf '\n# >>> christian dotfiles >>>\n[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc" ] && source "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc"\n# <<< christian dotfiles <<<\n' >> ~/.zshrc
 
-# 6. tmux plugin manager
+# Install tmux plugin manager
 git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 ```
 </details>
 
+
 ## Homebrew packages
 
-The intentional toolchain lives in the [Brewfile](./Brewfile) — the source of
-truth, replacing the old hand-maintained `brew install` line. Add a tool by
-editing the Brewfile, then run `brew bundle`. Transitive dependencies are **not**
-listed (Homebrew pulls those in on its own). To see what is installed but not
-recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
+The [Brewfile](./Brewfile) is the source of truth for macOS Homebrew packages. Add a tool by editing the Brewfile, then run `brew bundle`. Transitive dependencies are not listed. To see packages installed but not recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
+
+Ubuntu uses APT and upstream installation routes instead of Homebrew.
 
 ## Packages
 
@@ -89,6 +126,7 @@ recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
 | `starship/` | Cross-shell prompt |
 | `herdr/` | Agent multiplexer for the terminal (prefix set to backtick to match tmux) |
 | `pi/` | Pi coding agent config (`settings.json`, `mcp.json`, extensions, theme) -- excludes auth.json, caches, sessions, memory, `npm/` |
+| `pi-ollama/` | Optional Pi local search with Ollama (enabled with `INSTALL_PI_OLLAMA=1` on Ubuntu; installed by default on macOS) |
 | `omp/` | Oh My Pi agent config (`AGENTS.md`) -- excludes `config.yml`, which omp rewrites itself |
 | `agents/` | Shared agent skills in `~/.agents/skills/` (tree-folded — new skills need no re-stow) |
 
@@ -103,18 +141,18 @@ recorded, run `brew bundle cleanup --file=~/dotfiles/Brewfile`.
 ```
 dotfiles/
 ├── Brewfile                     (intentional Homebrew packages — source of truth)
-├── install.sh                   (idempotent macOS/Linux setup)
-├── setup-omp.sh                 (omp settings — run after launching omp once)
+├── install.sh                   (idempotent macOS/Ubuntu setup)
 ├── agents/.agents/skills/       (one dir symlink — add skills freely)
 ├── ghostty/.config/ghostty/config
 ├── herdr/.config/herdr/config.toml
 ├── pi/.pi/
-│   ├── knowledge-search.json
 │   └── agent/
 │       ├── settings.json     (packages, theme, models)
 │       ├── mcp.json
 │       ├── extensions/       (*.ts)
 │       └── themes/           (gruvbox-light.json)
+├── pi-ollama/.pi/
+│   └── knowledge-search.json
 ├── omp/.omp/agent/
 │   └── AGENTS.md             (steering refs)
 ├── starship/.config/starship.toml
@@ -130,7 +168,8 @@ dotfiles/
 │       ├── fzf.zsh
 │       ├── plugins.zsh
 │       └── prompt.zsh
-└── .gitignore
+├── .gitignore
+└── setup-omp.sh                 (omp settings — run after launching omp once)
 ```
 
 ## Updating

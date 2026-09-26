@@ -2,9 +2,13 @@
 # ~/.config/zsh/fzf.zsh
 # =========================================================
 
-export FZF_DEFAULT_COMMAND='fd --type f --hidden --strip-cwd-prefix'  # strip-cwd-prefix removes the leading ./ from results
+if [[ -n "$FD_COMMAND" ]]; then
+  export FZF_DEFAULT_COMMAND="$FD_COMMAND --type f --hidden --strip-cwd-prefix"
+else
+  export FZF_DEFAULT_COMMAND='find . -type f'
+fi
 
-# Ctrl-T uses fd
+# Ctrl-T uses the same file listing command.
 export FZF_CTRL_T_COMMAND="$FZF_DEFAULT_COMMAND"
 
 # UI
@@ -17,7 +21,11 @@ export FZF_DEFAULT_OPTS='
   --preview-window=right:65%:wrap:border-left
 '
 
-export _FZF_PREVIEW_CMD='bat --color=always --style=plain,numbers --line-range=:500 {}'
+if [[ -n "$BAT_COMMAND" ]]; then
+  export _FZF_PREVIEW_CMD="$BAT_COMMAND --color=always --style=plain,numbers --line-range=:500 {}"
+else
+  export _FZF_PREVIEW_CMD='cat {}'
+fi
 export FZF_CTRL_T_OPTS="--preview '$_FZF_PREVIEW_CMD'"
 
 # Ctrl+F: file picker excluding hidden files

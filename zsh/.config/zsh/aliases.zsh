@@ -20,10 +20,14 @@ alias tree='eza --tree --icons=auto'
 compdef eza=ls
 
 # Better cat
-alias cat='bat'
+if [[ -n "$BAT_COMMAND" ]]; then
+  alias cat="$BAT_COMMAND"
+fi
 
-# fd 
-alias f='fd'
+# fd
+if [[ -n "$FD_COMMAND" ]]; then
+  alias f="$FD_COMMAND"
+fi
 
 # =========================================================
 # Core utilities

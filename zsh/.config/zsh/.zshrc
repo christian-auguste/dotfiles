@@ -31,6 +31,12 @@ setopt AUTOCD
 setopt NOBEEP
 setopt NUMERIC_GLOB_SORT  # sort file10 after file9, not after file1
 
+# Load mise-managed tools, including the Ubuntu Node 22 runtime.
+if command -v mise >/dev/null 2>&1; then
+  eval "$(mise activate zsh)"
+fi
+
+
 # =========================================================
 # # Initialize zoxide w/ cd alias
 # =========================================================
@@ -58,10 +64,22 @@ zstyle ':completion:*' matcher-list 'm:{a-z}={A-Za-z}'  # lowercase input matche
 # Fuzzy finder
 # =========================================================
 
-# Enables fzf shell integration files for key binds and tab completion
-if [[ -f /opt/homebrew/opt/fzf/shell/key-bindings.zsh ]]; then
-  source /opt/homebrew/opt/fzf/shell/key-bindings.zsh
-  source /opt/homebrew/opt/fzf/shell/completion.zsh
+# Load fzf's native integration when available, then fall back to packaged
+# shell scripts used by older Ubuntu and Homebrew releases.
+if command -v fzf >/dev/null 2>&1; then
+  _fzf_zsh_integration=$(fzf --zsh 2>/dev/null)
+  if [[ -n "$_fzf_zsh_integration" ]]; then
+    eval "$_fzf_zsh_integration"
+  else
+    for _fzf_shell_dir in /usr/share/doc/fzf/examples /opt/homebrew/opt/fzf/shell; do
+      if [[ -f "$_fzf_shell_dir/key-bindings.zsh" && -f "$_fzf_shell_dir/completion.zsh" ]]; then
+        source "$_fzf_shell_dir/key-bindings.zsh"
+        source "$_fzf_shell_dir/completion.zsh"
+        break
+      fi
+    done
+  fi
+  unset _fzf_zsh_integration _fzf_shell_dir
 fi
 
 # =========================================================

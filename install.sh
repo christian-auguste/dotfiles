@@ -145,33 +145,157 @@ append_block() {
 
 step "Platform: $(uname -s) $(uname -m)  |  dotfiles: $DOTFILES"
 
-# --- Linux only: detect distro, ensure zsh installed, make it the login shell ---
-# (macOS ships zsh by default, so this whole block is skipped there.)
+# --- Linux: identify Ubuntu, ensure zsh, and inspect the configured account shell ---
+IS_UBUNTU=0
 if [ "$(uname -s)" = "Linux" ]; then
   if [ -r /etc/os-release ]; then . /etc/os-release; ok "Distro: ${PRETTY_NAME:-${ID:-unknown}}"
   else warn "/etc/os-release missing — cannot identify distro"; fi
 
-  if   command -v apt-get >/dev/null 2>&1; then PKG="sudo apt-get install -y"
-  elif command -v dnf     >/dev/null 2>&1; then PKG="sudo dnf install -y"
-  elif command -v pacman  >/dev/null 2>&1; then PKG="sudo pacman -S --needed --noconfirm"
-  elif command -v zypper  >/dev/null 2>&1; then PKG="sudo zypper install -y"
-  else PKG=""; fi
+  if [ "${ID:-}" = ubuntu ]; then
+    IS_UBUNTU=1
+  else
+    if   command -v apt-get >/dev/null 2>&1; then PKG="sudo apt-get install -y"
+    elif command -v dnf     >/dev/null 2>&1; then PKG="sudo dnf install -y"
+    elif command -v pacman  >/dev/null 2>&1; then PKG="sudo pacman -S --needed --noconfirm"
+    elif command -v zypper  >/dev/null 2>&1; then PKG="sudo zypper install -y"
+    else PKG=""; fi
+  fi
 
   step "Ensuring zsh is installed"
   if command -v zsh >/dev/null 2>&1; then ok "zsh present ($(zsh --version | cut -d' ' -f1-2))"
-  elif [ -n "$PKG" ]; then $PKG zsh && ok "zsh installed" || warn "zsh install failed"
+  elif [ "$IS_UBUNTU" -eq 1 ]; then sudo apt-get update && sudo apt-get install -y zsh && ok "zsh installed" || warn "zsh install failed"
+  elif [ -n "${PKG:-}" ]; then $PKG zsh && ok "zsh installed" || warn "zsh install failed"
   else warn "no known package manager — install zsh manually"; fi
 
   zsh_bin="$(command -v zsh || true)"
   if [ -n "$zsh_bin" ]; then
-    case "${SHELL:-}" in
-      *zsh) ok "login shell already zsh" ;;
+    account_shell="$(getent passwd "$(id -un)" 2>/dev/null | cut -d: -f7)"
+    if [ -z "$account_shell" ] && [ -r /etc/passwd ]; then
+      account_shell="$(awk -F: -v user="$(id -un)" '$1 == user { print $7; exit }' /etc/passwd)"
+    fi
+    case "$account_shell" in
+      */zsh) ok "configured account shell already zsh ($account_shell)" ;;
       *) step "Setting zsh as login shell"
-         chsh -s "$zsh_bin" && ok "login shell -> $zsh_bin (effective next login)" \
+         chsh -s "$zsh_bin" "$(id -un)" && ok "login shell -> $zsh_bin (effective next login)" \
            || warn "chsh failed (managed/LDAP shell?) — change it manually" ;;
     esac
   fi
 fi
+
+if [ "$IS_UBUNTU" -eq 1 ]; then
+  # Keep this explicit: every Brewfile formula is installed here or named as a deliberate skip.
+  export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+
+  step "Ubuntu package mapping (apt/upstream)"
+  printf '  Brewfile -> apt: stow zoxide fzf fd-find eza bat ripgrep tmux cloc nodejs npm git-lfs pipx ruby graphviz unison unzip\n'
+  printf '  Brewfile -> upstream: starship mise bun omp herdr; mise Node 22 + npm: typescript-language-server vscode-langservers-extracted; apt-best-effort (failures are skipped): ruff rust-analyzer; pipx: basedpyright\n'
+  printf '  Brewfile -> opt-in: ollama (Pi local search); skipped: tlrc (no configured Ubuntu route)\n'
+  sudo apt-get update && ok "apt package indexes updated" || warn "apt update failed"
+  for package in git curl ca-certificates gpg tar xz-utils unzip fontconfig stow zoxide fzf fd-find eza bat ripgrep tmux cloc nodejs npm git-lfs pipx ruby graphviz unison; do
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+      ok "$package already installed"
+    elif sudo apt-get install -y "$package"; then ok "$package installed"
+    else warn "apt install failed: $package"; fi
+  done
+  for package in ruff rust-analyzer; do
+    if dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+      ok "$package already installed"
+    elif sudo apt-get install -y "$package"; then ok "$package installed"
+    else warn "$package skipped: Ubuntu apt install failed; no upstream route configured"; fi
+  done
+  sudo apt-get install -y xclip wl-clipboard || warn "clipboard helpers (xclip/wl-clipboard) install failed"
+  # Ubuntu's fd-find and bat use different executable names than the Brewfile.
+  mkdir -p "$HOME/.local/bin"
+  for pair in "fd:/usr/bin/fdfind" "bat:/usr/bin/batcat"; do
+    name="${pair%%:*}"; binary="${pair#*:}"; link="$HOME/.local/bin/$name"
+    [ -x "$binary" ] || continue
+    if [ -L "$link" ] && [ "$(readlink -f "$link" 2>/dev/null)" = "$binary" ]; then
+      ok "$name compatibility link already correct"
+    elif [ ! -e "$link" ] && [ ! -L "$link" ]; then
+      ln -s "$binary" "$link" && ok "$name compatibility link created" || warn "could not create $name compatibility link"
+    else
+      warn "$link already exists and is not the expected package link; preserving it"
+    fi
+  done
+  # Upstream-supported installers for tools not consistently available in Ubuntu apt.
+  if ! command -v starship >/dev/null 2>&1; then
+    curl -fsSL https://starship.rs/install.sh | sh -s -- -y || warn "Starship official installer failed"
+  fi
+  if ! command -v mise >/dev/null 2>&1; then curl -fsSL https://mise.run | sh || warn "mise upstream installer failed"; fi
+  if ! command -v bun >/dev/null 2>&1; then curl -fsSL https://bun.sh/install | bash || warn "Bun upstream installer failed"; fi
+  export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
+  if ! command -v omp >/dev/null 2>&1; then curl -fsSL https://omp.sh/install | bash || warn "OMP official installer failed"; fi
+  if ! command -v herdr >/dev/null 2>&1; then curl -fsSL https://herdr.dev/install.sh | sh || warn "Herdr official installer failed"; fi
+  if command -v mise >/dev/null 2>&1 && mise use --global node@22; then
+    mise exec -- npm install --global typescript-language-server vscode-langservers-extracted \
+      || warn "language-server npm installs failed"
+  else warn "language servers skipped: mise Node 22 unavailable"; fi
+  warn "tlrc has no configured Ubuntu install route; Brewfile tool intentionally skipped"
+
+  ask_yes_no() {
+    local prompt="$1" default="$2" answer
+    if [ ! -t 0 ]; then [ "$default" = yes ]; return; fi
+    if [ "$default" = yes ]; then read -r -p "    $prompt [Y/n] " answer; answer="${answer:-y}"
+    else read -r -p "    $prompt [y/N] " answer; answer="${answer:-n}"; fi
+    [[ "$answer" = y || "$answer" = Y || "$answer" = yes || "$answer" = YES ]]
+  }
+  WANT_VSCODE=0; WANT_GHOSTTY=0; WANT_FONT=0; WANT_PI_OLLAMA=0
+  ask_yes_no "Install Visual Studio Code?" yes && WANT_VSCODE=1
+  ask_yes_no "Install Ghostty?" yes && WANT_GHOSTTY=1
+  ask_yes_no "Install FiraMono Nerd Font?" yes && WANT_FONT=1
+  if [ "${INSTALL_PI_OLLAMA:-}" = 1 ]; then
+    WANT_PI_OLLAMA=1
+  else
+    ask_yes_no "Enable Pi local search (Ollama + nomic-embed-text)?" no && WANT_PI_OLLAMA=1
+  fi
+
+  if [ "$WANT_VSCODE" -eq 1 ]; then
+    if ! command -v code >/dev/null 2>&1; then
+      curl -fsSL https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor | sudo tee /usr/share/keyrings/microsoft.gpg >/dev/null &&
+      echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/microsoft.gpg] https://packages.microsoft.com/repos/code stable main" | sudo tee /etc/apt/sources.list.d/vscode.list >/dev/null &&
+      sudo apt-get update && sudo apt-get install -y code || warn "VS Code install failed; see https://code.visualstudio.com/docs/setup/linux"
+    else ok "VS Code already installed"; fi
+  else ok "VS Code intentionally skipped"; fi
+
+  if [ "$WANT_GHOSTTY" -eq 1 ]; then
+    if command -v ghostty >/dev/null 2>&1; then ok "Ghostty already installed"
+    elif [ "${VERSION_ID:-}" = "26.04" ]; then
+      sudo apt-get install -y ghostty || warn "Ghostty apt install failed"
+    elif [ "${VERSION_ID:-}" = "24.04" ]; then
+      if ! dpkg-query -W -f='${Status}' software-properties-common 2>/dev/null | grep -q 'install ok installed'; then
+        sudo apt-get install -y software-properties-common || warn "software-properties-common install failed"
+      fi
+      if command -v add-apt-repository >/dev/null 2>&1; then
+        if ask_yes_no "Ubuntu 24.04 requires the mkasberg community PPA. Add it?" no; then
+          sudo add-apt-repository -y ppa:mkasberg/ghostty && sudo apt-get update && sudo apt-get install -y ghostty || warn "Ghostty PPA install failed"
+        else warn "Ghostty skipped: add ppa:mkasberg/ghostty with consent or install manually"; fi
+      else warn "Ghostty PPA skipped: add-apt-repository unavailable"; fi
+    else warn "Ghostty package route unknown for Ubuntu ${VERSION_ID:-unknown}; install manually"; fi
+  else ok "Ghostty intentionally skipped"; fi
+
+  if [ "$WANT_FONT" -eq 1 ]; then
+    font_dir="$HOME/.local/share/fonts"
+    mkdir -p "$font_dir" &&
+      curl -fL https://github.com/ryanoasis/nerd-fonts/releases/download/v3.5.1/FiraMono.tar.xz -o "$font_dir/FiraMono.tar.xz" &&
+      tar -xJf "$font_dir/FiraMono.tar.xz" -C "$font_dir" &&
+      rm -f "$font_dir/FiraMono.tar.xz" && fc-cache -f "$font_dir" && ok "FiraMono Nerd Font v3.5.1 installed user-locally" ||
+      warn "FiraMono Nerd Font download/install failed"
+  else ok "FiraMono Nerd Font intentionally skipped"; fi
+
+  if [ "$WANT_PI_OLLAMA" -eq 1 ]; then
+    curl -fsSL https://ollama.com/install.sh | sh || warn "Ollama upstream installer failed"
+    if command -v ollama >/dev/null 2>&1; then
+      ollama pull nomic-embed-text || warn "nomic-embed-text pull failed"
+    fi
+  else ok "Pi local search intentionally skipped"; fi
+
+  if ! command -v pi >/dev/null 2>&1; then
+    if command -v bun >/dev/null 2>&1; then
+      bun install -g @earendil-works/pi-coding-agent || warn "Pi CLI install failed (bun install -g @earendil-works/pi-coding-agent)"
+    else warn "Pi CLI skipped: Bun unavailable; install Bun and retry"; fi
+  fi
+else
+  if [ "$(uname -s)" = "Darwin" ]; then
 
 # 1. Homebrew (hard requirement)
 if command -v brew >/dev/null 2>&1; then
@@ -313,7 +437,12 @@ elif command -v npm >/dev/null 2>&1 && npm install --global --ignore-scripts @ea
   ok "Pi CLI installed"
 else
   warn "could not install Pi CLI — run: npm install --global --ignore-scripts @earendil-works/pi-coding-agent"
+  fi
 fi
+fi
+
+# Pi local-search config remains enabled on macOS to preserve existing behavior.
+[ "$IS_UBUNTU" -eq 1 ] || WANT_PI_OLLAMA=1
 
 # 5. Directories the zsh config expects
 step "Creating XDG directories"
@@ -323,9 +452,17 @@ mkdir -p ~/.local/state/zsh ~/.cache/zsh && ok "state + cache dirs ready" || war
 #    zsh ships only ~/.config/zsh/* (no top-level ~/.zshenv), so it is safe here.
 step "Stowing owned packages"
 cd "$DOTFILES"
+
 if command -v stow >/dev/null 2>&1; then
-  for pkg in */; do
-    pkg="${pkg%/}"
+  if [ "$IS_UBUNTU" -eq 1 ] && [ "$WANT_PI_OLLAMA" -eq 0 ] && [ -d pi-ollama ]; then
+    if stow -D pi-ollama; then ok "removed previously stowed pi-ollama"
+    else warn "could not remove previously stowed pi-ollama"; fi
+  fi
+
+  for pkg in agents ghostty herdr omp pi pi-ollama starship tmux zsh; do
+    [ -d "$pkg" ] || continue
+    if [ "$pkg" = pi-ollama ] && [ "$WANT_PI_OLLAMA" -eq 0 ]; then continue; fi
+
 
     # A real file or directory already sitting at a target path makes stow
     # abort the WHOLE package, not just that one path (this bit starship on a
@@ -367,6 +504,7 @@ fi
 step "Wiring shell config (coexist)"
 append_block "$HOME/.zshenv" \
 'export XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"
+export PATH="$HOME/.local/bin:$HOME/.bun/bin:$PATH"
 [ -f "$XDG_CONFIG_HOME/zsh/.zshenv" ] && source "$XDG_CONFIG_HOME/zsh/.zshenv"
 [ -f "$HOME/.zshenv.local" ] && source "$HOME/.zshenv.local"'
 append_block "$HOME/.zshrc" \
