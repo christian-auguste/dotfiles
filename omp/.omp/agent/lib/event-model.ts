@@ -10,7 +10,7 @@ export type MdLogEvent =
   | { id: string; kind: "skill"; name: string; text: string }
   | { id: string; kind: "assistant"; text: string; sources: boolean }
   | { id: string; kind: "question"; question: string; options: string[] }
-  | { id: string; kind: "answer"; text: string; verdict?: "success" | "warning" | "abstract" }
+  | { id: string; kind: "answer"; text: string; verdict?: "success" | "warning" | "abstract" | "cancelled" }
   | { id: string; kind: "artifact"; name: string; embedPath: string; content: string };
 
 const ASK: Record<string, true> = { ask: true, ask_user_question: true, quiz: true };
@@ -155,6 +155,9 @@ function numberedAnswers(options: unknown, indices: unknown): string[] {
 }
 
 function quizAnswer(details: RecordValue): MdLogEvent {
+  if (details.status === "cancelled") {
+    return { id: "", kind: "answer", text: "Question cancelled", verdict: "cancelled" };
+  }
   const dontKnow = details.dontKnow === true || details.unknown === true;
   const selected = dontKnow ? ["I don't know"] : answerLabels(details.answers).length ? answerLabels(details.answers) : [String(details.selectedOption ?? "(no answer)")];
   const correct = numberedAnswers(details.options, details.correctIndices);

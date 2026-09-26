@@ -35,14 +35,18 @@ export function renderCallout(event: MdLogEvent): string {
         ? "Quiz — incorrect ✗"
         : event.verdict === "abstract"
           ? "Quiz — I don't know"
-          : "Answer";
+          : event.verdict === "cancelled"
+            ? "Quiz — cancelled"
+            : "Answer";
     const type = event.verdict === "success"
       ? "success"
       : event.verdict === "warning"
         ? "failure"
         : event.verdict === "abstract"
           ? "question"
-          : "example";
+          : event.verdict === "cancelled"
+            ? "question"
+            : "example";
     return `> [!${type}] ${label}\n${quoteLines(event.text)}`;
   }
   return `![[${event.embedPath}]]`;
