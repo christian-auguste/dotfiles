@@ -455,7 +455,7 @@ if command -v stow >/dev/null 2>&1; then
     else warn "could not remove previously stowed pi-ollama"; fi
   fi
 
-  for pkg in agents ghostty herdr omp pi pi-ollama starship tmux zsh; do
+  for pkg in agents codex ghostty herdr omp pi pi-ollama starship tmux zsh; do
     [ -d "$pkg" ] || continue
     if [ "$pkg" = pi-ollama ] && [ "$WANT_PI_OLLAMA" -eq 0 ]; then continue; fi
 

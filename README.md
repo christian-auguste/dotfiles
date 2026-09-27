@@ -93,12 +93,12 @@ The standalone `pi` command and OMP's `omp` command can coexist. Pi's tracked co
 mkdir -p ~/.local/state/zsh ~/.cache/zsh
 
 # macOS: include pi-ollama with the default packages
-cd ~/dotfiles && stow agents ghostty herdr omp pi pi-ollama starship tmux zsh
+cd ~/dotfiles && stow agents codex ghostty herdr omp pi pi-ollama starship tmux zsh
 
 # Ubuntu: omit optional pi-ollama unless selected
-cd ~/dotfiles && stow agents ghostty herdr omp pi starship tmux zsh
+cd ~/dotfiles && stow agents codex ghostty herdr omp pi starship tmux zsh
 # selected Ubuntu setup:
-cd ~/dotfiles && stow agents ghostty herdr omp pi pi-ollama starship tmux zsh
+cd ~/dotfiles && stow agents codex ghostty herdr omp pi pi-ollama starship tmux zsh
 
 # Wire the shared shell files (appends fenced blocks and backs up first)
 printf '\n# >>> christian dotfiles >>>\nexport XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"\n[ -f "$XDG_CONFIG_HOME/zsh/.zshenv" ] && source "$XDG_CONFIG_HOME/zsh/.zshenv"\n[ -f "$HOME/.zshenv.local" ] && source "$HOME/.zshenv.local"\n# <<< christian dotfiles <<<\n' >> ~/.zshenv
@@ -129,6 +129,7 @@ Ubuntu uses APT and upstream installation routes instead of Homebrew.
 | `pi-ollama/` | Optional Pi local search with Ollama (enabled with `INSTALL_PI_OLLAMA=1` on Ubuntu; installed by default on macOS) |
 | `omp/` | Oh My Pi agent config (`AGENTS.md`) -- excludes `config.yml`, which omp rewrites itself |
 | `agents/` | Shared agent skills in `~/.agents/skills/` (tree-folded — new skills need no re-stow) |
+| `codex/` | Codex global instructions at `~/.codex/AGENTS.md`, linked to the shared `~/.agents/AGENTS.md` |
 
 ## Zsh plugins (auto-installed on first shell load)
 
@@ -143,6 +144,7 @@ dotfiles/
 ├── Brewfile                     (intentional Homebrew packages — source of truth)
 ├── install.sh                   (idempotent macOS/Ubuntu setup)
 ├── agents/.agents/skills/       (one dir symlink — add skills freely)
+├── codex/.codex/AGENTS.md       (link to shared agent instructions)
 ├── ghostty/.config/ghostty/config
 ├── herdr/.config/herdr/config.toml
 ├── pi/.pi/
