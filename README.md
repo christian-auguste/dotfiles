@@ -54,7 +54,7 @@ The Pi Ollama local-search package installs by default on macOS to preserve the 
 
 ### Ubuntu
 
-On Ubuntu, the installer uses APT for system tools (`stow`, `zoxide`, `fzf`, `fd-find`, `eza`, `bat`, `ripgrep`, `tmux`, `cloc`, `nodejs`, `npm`, `git-lfs`, `pipx`, `ruby`, `graphviz`, `unison`, `ruff`, and `rust-analyzer`), plus `xclip` and `wl-clipboard`. It installs Starship through its official Linux installer, and OMP and Herdr through their official Linux installers. Interactive prompts default to yes for Visual Studio Code, Ghostty, and FiraMono Nerd Font, and no for Pi local search. In non-interactive runs those same defaults apply without prompting. Set `INSTALL_PI_OLLAMA=1` to enable local search without the prompt. The installer also sets zsh as your login shell, stows the dotfiles, wires the shared zsh files, and installs TPM.
+On Ubuntu, the installer uses APT for system tools (`stow`, `zoxide`, `fzf`, `fd-find`, `eza`, `bat`, `ripgrep`, `tmux`, `cloc`, `nodejs`, `npm`, `git-lfs`, `pipx`, `ruby`, `graphviz`, `unison`, `ruff`, and `rust-analyzer`), plus `xclip` and `wl-clipboard`. It installs Starship through its official Linux installer, and OMP and Herdr through their official Linux installers. Interactive prompts default to yes for Visual Studio Code, Ghostty, and FiraMono Nerd Font, and no for Pi local search. In non-interactive runs those same defaults apply without prompting. Set `INSTALL_PI_OLLAMA=1` to enable local search without the prompt. The installer also sets zsh as your login shell, stows the dotfiles, wires the shared zsh files, and installs TPM. If it changes your login shell, log out of Ubuntu and back in so terminal apps inherit the change.
 
 ```sh
 ~/dotfiles/install.sh
@@ -68,9 +68,9 @@ INSTALL_PI_OLLAMA=1 ~/dotfiles/install.sh
 
 This installs Ollama and `nomic-embed-text`, and stows the separate `pi-ollama` package. The `pi` command installs through Bun if missing.
 
-The installer uses Microsoft's signed APT repository for VS Code. Ghostty uses Ubuntu's APT package on 26.04; on 24.04 it offers the `ppa:mkasberg/ghostty` community PPA, which is added only after explicit consent (the prompt defaults to no). FiraMono Nerd Font v3.5.1 installs under `~/.local/share/fonts`. The installer uses mise to install Node 22 and the TypeScript and VS Code language servers, pipx for basedpyright, and upstream installers for Starship, Bun, OMP, Herdr, and Ollama when Pi local search is selected.
+The installer uses Microsoft's signed APT repository for VS Code. Ghostty uses Ubuntu's official APT package on 26.04; on 24.04 it offers the [community-built `.deb` installer](https://ghostty.org/docs/install/binary#debian-and-ubuntu), which runs only after explicit consent (default no) and is not an official Ubuntu package. FiraMono Nerd Font v3.5.1 installs under `~/.local/share/fonts`. The installer uses mise to install Node 22 and the TypeScript and VS Code language servers, pipx for basedpyright, and upstream installers for Starship, Bun, OMP, Herdr, and Ollama when Pi local search is selected.
 
-The only deliberate Ubuntu package skip is `tlrc`, because no Ubuntu install route is configured. If mise or its Node 22 install fails, the installer reports the language-server install as skipped; if Bun is unavailable, it reports the Pi CLI install as skipped.
+The installer deliberately skips `tlrc` because no Ubuntu route is configured. If you decline Ghostty's community installer, or mise/Node 22 or Bun is unavailable, it reports the affected package as skipped.
 
 Open tmux and press `` ` `` then `I` to install plugins.
 

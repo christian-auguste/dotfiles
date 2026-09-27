@@ -176,7 +176,7 @@ if [ "$(uname -s)" = "Linux" ]; then
     case "$account_shell" in
       */zsh) ok "configured account shell already zsh ($account_shell)" ;;
       *) step "Setting zsh as login shell"
-         chsh -s "$zsh_bin" "$(id -un)" && ok "login shell -> $zsh_bin (effective next login)" \
+         chsh -s "$zsh_bin" "$(id -un)" && ok "login shell -> $zsh_bin (effective after logging out and back in)" \
            || warn "chsh failed (managed/LDAP shell?) — change it manually" ;;
     esac
   fi
@@ -262,14 +262,10 @@ if [ "$IS_UBUNTU" -eq 1 ]; then
     elif [ "${VERSION_ID:-}" = "26.04" ]; then
       sudo apt-get install -y ghostty || warn "Ghostty apt install failed"
     elif [ "${VERSION_ID:-}" = "24.04" ]; then
-      if ! dpkg-query -W -f='${Status}' software-properties-common 2>/dev/null | grep -q 'install ok installed'; then
-        sudo apt-get install -y software-properties-common || warn "software-properties-common install failed"
-      fi
-      if command -v add-apt-repository >/dev/null 2>&1; then
-        if ask_yes_no "Ubuntu 24.04 requires the mkasberg community PPA. Add it?" no; then
-          sudo add-apt-repository -y ppa:mkasberg/ghostty && sudo apt-get update && sudo apt-get install -y ghostty || warn "Ghostty PPA install failed"
-        else warn "Ghostty skipped: add ppa:mkasberg/ghostty with consent or install manually"; fi
-      else warn "Ghostty PPA skipped: add-apt-repository unavailable"; fi
+      if ask_yes_no "Install the community-built Ghostty .deb (not an official Ubuntu package)?" no; then
+        curl -fsSL https://raw.githubusercontent.com/mkasberg/ghostty-ubuntu/HEAD/install.sh | bash \
+          || warn "Ghostty community .deb install failed"
+      else warn "Ghostty skipped: community .deb install declined"; fi
     else warn "Ghostty package route unknown for Ubuntu ${VERSION_ID:-unknown}; install manually"; fi
   else ok "Ghostty intentionally skipped"; fi
 
@@ -529,7 +525,7 @@ fi
 
 # Summary
 if [ "$WARN" -eq 0 ]; then
-  printf '\n%s✓ Done — no warnings.%s Restart your shell (or run `exec zsh -l`).\n' "$G$B" "$X"
+  printf '\n%s✓ Done — no warnings.%s Restart your shell; after a login-shell change, log out of Ubuntu and back in.\n' "$G$B" "$X"
 else
-  printf '\n%s⚠ Done with %d warning(s).%s Review the lines above; the rest completed.\n' "$Y$B" "$WARN" "$X"
+  printf '\n%s⚠ Done with %d warning(s).%s Review the lines above; after a login-shell change, log out of Ubuntu and back in.\n' "$Y$B" "$WARN" "$X"
 fi
