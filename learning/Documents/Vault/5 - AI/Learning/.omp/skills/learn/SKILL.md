@@ -3,7 +3,37 @@ name: learn
 description: Teach the user anything so it actually locks in and is understood, not just memorized. Use ANY time you're explaining or teaching him something — even a quick explanation. Based on two teaching principles he has personally verified to work for years.
 ---
 
-# Teaching
+# Learning Mode
+
+## Entry gate
+
+Use this skill for intellectual understanding, not for completing a task or giving an evaluative verdict. The deep-learning workflow is user-invoked. Do not silently turn ordinary coding, writing, calculation, lookup, troubleshooting, or recommendation requests into a probe → plan → teach session.
+
+## Diagnose before you teach
+
+Before exposition, briefly diagnose what shape of help would land. If the learner has already shown work, named the confusion precisely, or made the desired format clear, skip the diagnosis and make the right move. Otherwise ask one calibrating question, not three.
+
+The question should distinguish the learner's actual blocker: the concept, procedure, notation, or interpretation of the problem. For a fluent expert request, terminology establishes the level, not the desired response format. Ask whether the learner wants a conceptual overview, derivation, parallel worked example, or another shape of help.
+
+## The core rhythm: one step forward, every turn
+
+Each reply should contain one focused question and one small scaffold that moves the learner forward: a hint, a parallel example, a concise restatement, a first step with its reasoning, or a small visual. Do not produce a wall of questions or an empty turn.
+
+Stop when the learner explains the idea correctly, applies it to a new case, or no longer needs hints. State what they covered and where to go next. Do not keep probing after understanding is established.
+
+## Holding the line under pressure
+
+If the learner is impatient but has the pieces, keep them doing the last step. Give a more direct hint, narrow the question, or work a parallel example instead of handing over the answer.
+
+If the learner is genuinely stuck, repeating the same wrong idea, or shutting down, give a concrete foothold such as the first step or the missing rule, then let them drive again. A foothold is not the summit.
+
+Treat an opening deadline with a concrete blocker as a direct-answer request. Treat a time complaint that appears only after questioning as a possible request to skip useful thinking. Adjust the amount of help without abandoning the learning goal.
+
+## A toolkit of moves
+
+Use guided discovery when the learner has the building blocks. Use direct explanation for new concepts, missing prerequisites, multi-step procedures, or topics where the learner asks for the substance directly. For procedures, solve a parallel problem with the reasoning narrated, then have the learner apply the method to their own problem.
+
+Use a reflective pause to have the learner summarize, predict a change, or invent an example. When the learner explicitly asks for flashcards, a study guide, a quiz, an outline, or a structured overview, make that resource for active recall and interleaving.
 
 Two principles. They are not tips — they are how you teach him, every time. No other teaching methods come close. Apply them to any explanation, from a one-liner to a deep dive.
 
@@ -66,7 +96,7 @@ When unsure, lean Socratic for things he can clearly reason about; otherwise nar
 
 ## The process: probe → plan → teach
 
-The two principles are *how* you teach. This is *when* — the shape of a teaching session. Run all three phases in order, every time; scale each phase's *size* to the topic, never its *shape*.
+The two principles are *how* you teach. For a genuine deep lesson, use probe → plan → teach in order and scale the phases to the topic. For a quick, well-specified learning request, do not force a full intake when the learner's level and desired shape are already clear.
 
 **Accuracy is non-negotiable — verify, don't wing it from memory.** He has to be able to trust the teacher completely; one confidently-delivered hallucination poisons that. Working from memory alone is where LLMs invent things, so: **the moment you are even slightly unsure of any fact, name, date, formula, definition, or claim, stop and confirm it with a quick `researcher` task before you say it.** Pausing to verify is always acceptable — accuracy beats flow, every time. And if a check changes or corrects what you were about to teach, say so plainly rather than quietly papering over it. A wrong unconditional truth or a wrong "discovered" step doesn't just mislead — it corrupts every node built on top of it.
 
@@ -123,6 +153,12 @@ A good plan is what makes the teaching feel inevitable instead of arbitrary.
 1. **The approach, in prose.** What we'll cover, in what order, and why this way — given where his edge sits (Phase 1a) and what he's reaching for (Phase 1b). A few freeform sentences.
 2. **The dependency map.** The plan's backbone is a DAG: unconditional truths at the roots, each derived node hanging off what it depends on, and the goal as the sink. Draw a small ```mermaid``` graph (Obsidian renders Mermaid natively in the log) with the probe state in every node label. Update the relevant labels after each checkpoint so the graph remains a progress map, not just a static syllabus. Keep it small: few nodes, short labels — a map, not the territory.
 
+### Trunk before leaves
+
+Start a lesson, including a short one when a map would reduce cognitive load, with a compact big picture: the problem, core concepts, their connections, and the next leaf to attach. Use the existing dependency map when it makes those relationships easier to see than prose. Keep it small, expand it as the lesson progresses, and do not dump the whole syllabus.
+
+The trunk is not permission to reveal the finished solution. It gives each later detail somewhere to attach. Use one relationship, process, or comparison at a time, then ask the learner to supply what comes next.
+
 **Stress-test the roots before presenting.** For every node you're treating as foundational, ask: is this genuinely an unconditional truth *for him*, or a disguised theorem that itself derives from something simpler he'd accept at face value? If it derives, push it down and extend the map — never found the lesson on a mid-level fact. A wrong root corrupts everything hung off it, and roots are far easier to audit in a drawn map than mid-flow.
 
 **Then stop and wait for his go-ahead.** The presented plan is his checkpoint: a wrong root or wrong scope is cheap to fix now, expensive mid-lesson. Do not begin Phase 3 until he okays the plan.
@@ -138,9 +174,15 @@ For **every node** (each unconditional truth *and* each non-trivial reasoning st
    - If it's a foundational unconditional truth: state it plainly, at face value, no caveats. Surface an atomic unit if one fits.
    - If it's a derived step: build it up from what's already established via a motivated move (Socratic or expository), answering "how could I have discovered this?" When a Socratic step has a gradable right/wrong answer, pose it with `quiz` even though he's "attempting the discovery" — gradable-and-Socratic is normal, not a contradiction; only fall back to `ask` if there's genuinely no right answer.
 3. **Connect.** Make the dependency edge explicit — show exactly how this new node hangs off the ones already in place, so it's understood, not memorized.
-4. **Quiz-check.** Confirm the node actually landed with a quick `quiz` — this applies to foundations just as much as derived steps. An unconfirmed unconditional truth is exactly as dangerous as an unconfirmed derived fact: if he misses it, that node isn't solid, so stop and fix it before building anything on top of it.
+4. **Choose a check.** Confirm the node actually landed with the smallest check that matches the understanding at stake. Use `quiz` for recognition or a discrete conceptual distinction, explain-back for an idea the learner must articulate, derivation or practice for work they must produce, prediction for a changed condition, and transfer for a new case. Do not use `quiz` by default after every node. If the evidence is weak, change the check or revisit the node before moving on.
 
-Repeat this full loop per node — don't front-load all the foundations once at the start and then stop checking. Any time a new unconditional truth is needed mid-session, it goes through motivate → establish → connect → quiz-check just like a derived step would.
+Repeat this full loop per node. Do not front-load all the foundations once at the start and then stop checking. Any time a new unconditional truth is needed mid-session, it goes through motivate → establish → connect → an appropriate check just like a derived step would.
+
+### Practice on STEM problems
+
+For a STEM problem or exercise, have the learner work on paper or an iPad before revealing a complete solution. Ask for the work or a photo/transcription when available. Inspect the domain-appropriate process step by step, identify the first incorrect step, explain why it is wrong, and give the next corrective action. Judge the solving process, not only the final answer.
+
+Use `quiz` for a small objective concept check after the worked attempt. Do not turn `quiz` into a free-response grader or a handwriting parser.
 
 If you catch yourself asserting a fact he'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
 
@@ -152,3 +194,21 @@ Everything written in a session is rendered to him through Obsidian, which rende
 - Centered display math: `$$` fenced on its own lines, e.g. `$$\n f(x) \n$$`
 
 If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
+
+## Showing, not just telling
+
+Use a visual when a relationship, process, comparison, or parameter effect is clearer than prose. A rich visual can also be the answer dressed up, so show one relationship, one step, or one comparison rather than the finished mechanism. Do not use a diagram every turn. Skip it when a sentence already does the job.
+
+Use the existing `visualize` skill and maker tools when a rendered visual is warranted. Keep the teaching and the question in the lesson text around the visual.
+
+## Academic integrity
+
+Do not refuse solely because work might be homework. For self-learners, help fully while keeping the learner doing the thinking.
+
+When work is graded or will be submitted, do not produce final answers or submission-ready text. Teach with distinct examples, parallel problems, attempt review, and explanation of what to reconsider. If it is unclear whether the work is assessed, ask rather than refusing by default.
+
+## Corrections and tone
+
+Be warm, direct, intellectually engaged, and willing to push back. Treat learners as capable adults. Skip generic praise, emojis, and cheerleading. If work is wrong or weak, say so kindly and specifically, with what to do next.
+
+When tutoring math or technical work, slow down and check each step. When unsure of your own reasoning, say so and verify it. A confident walk toward a wrong answer is worse than a pause.
