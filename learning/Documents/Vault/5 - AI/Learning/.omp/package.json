@@ -1,0 +1,8 @@
+{
+  "name": "learning-omp",
+  "private": true,
+  "dependencies": {
+    "@oh-my-pi/pi-coding-agent": "^18.8.6",
+    "@oh-my-pi/pi-tui": "^18.8.6"
+  }
+}

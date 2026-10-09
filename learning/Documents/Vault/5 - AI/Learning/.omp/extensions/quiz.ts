@@ -8,7 +8,7 @@ import {
 	truncateToWidth,
 	wrapTextWithAnsi,
 } from "@oh-my-pi/pi-tui";
-import { getEditorTheme } from "@oh-my-pi/pi-coding-agent/modes/theme/tui-adapters";
+import { getEditorTheme } from "@oh-my-pi/pi-tui/theme";
 
 // ────────────────────────────────────────────────────────────────────────────
 // quiz — a GRADED sibling of ask.

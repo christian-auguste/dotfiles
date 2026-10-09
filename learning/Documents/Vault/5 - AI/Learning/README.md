@@ -18,6 +18,12 @@ This is a personal system built as an OMP project configuration. It contains the
 
 ## Use
 
+Install the local extension dependencies before starting OMP:
+
+```bash
+cd .omp && npm ci
+```
+
 Start OMP from this directory:
 
 ```bash
