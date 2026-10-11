@@ -1,4 +1,4 @@
-import { access, appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { isWithin } from "./path-guard";
 
@@ -58,9 +58,139 @@ export async function findFrontMatterTarget(root: string, marker: string, limit 
   return matches;
 }
 
-export async function appendLogBlock(file: string, block: string): Promise<void> {
+export interface LogBlock {
+  id: string;
+  content: string;
+}
+
+interface MarkedBlock extends LogBlock {
+  start: number;
+  end: number;
+}
+
+export interface ReconcileLogResult {
+  addedIds: string[];
+  presentIds: string[];
+}
+
+function stripLogMarkers(text: string): string {
+  return text.replace(/^<!-- md-log:event:[a-f0-9]{8}:(?:start|end) -->(?:\r?\n|$)/gm, "");
+}
+
+function ambiguousBlockIds(text: string, history: readonly LogBlock[]): Set<string> {
+  const groups = new Map<string, LogBlock[]>();
+  for (const block of history) {
+    const group = groups.get(block.content) ?? [];
+    group.push(block);
+    groups.set(block.content, group);
+  }
+  const ambiguous = new Set<string>();
+  for (const [content, group] of groups) {
+    let count = 0;
+    let from = 0;
+    while (true) {
+      const start = text.indexOf(content, from);
+      if (start < 0) break;
+      count++;
+      from = start + content.length;
+    }
+    if (count > 0 && count !== group.length) {
+      for (const block of group) ambiguous.add(block.id);
+    }
+  }
+  return ambiguous;
+}
+
+function findBlocks(text: string, history: readonly LogBlock[]): MarkedBlock[] {
+  const groups = new Map<string, LogBlock[]>();
+  for (const block of history) {
+    const group = groups.get(block.content) ?? [];
+    group.push(block);
+    groups.set(block.content, group);
+  }
+
+  const found: MarkedBlock[] = [];
+  for (const [content, group] of groups) {
+    const positions: number[] = [];
+    let from = 0;
+    while (true) {
+      const start = text.indexOf(content, from);
+      if (start < 0) break;
+      positions.push(start);
+      from = start + content.length;
+    }
+    if (positions.length !== group.length) continue;
+    positions.forEach((start, index) => {
+      found.push({ ...group[index]!, start, end: start + content.length });
+    });
+  }
+  return found.sort((a, b) => a.start - b.start);
+}
+
+export async function reconcileLogBlocks(
+  file: string,
+  history: readonly LogBlock[],
+  eligibleIds: ReadonlySet<string>,
+): Promise<ReconcileLogResult> {
   await ensureMarkdownFile(file);
-  await appendFile(file, `\n${block}\n`, "utf8");
+  let text = (await readText(file)) ?? "";
+  const original = text;
+  text = stripLogMarkers(text);
+  const ambiguousIds = ambiguousBlockIds(text, history);
+  let existing = findBlocks(text, history);
+  const presentIds = new Set(existing.map((block) => block.id));
+  const addedIds: string[] = [];
+  const contiguous = existing.length > 0 && existing.every((block, index) =>
+    index === 0 || /^\s*$/.test(text.slice(existing[index - 1]!.end, block.start)),
+  );
+
+  if (contiguous) {
+    const first = existing[0]!;
+    const last = existing[existing.length - 1]!;
+    const target = history.filter((block) =>
+      (presentIds.has(block.id) || eligibleIds.has(block.id)) && !ambiguousIds.has(block.id),
+    );
+    const replacement = target.map((block) => {
+      if (!presentIds.has(block.id)) addedIds.push(block.id);
+      presentIds.add(block.id);
+      return block.content;
+    }).join("\n\n");
+    text = text.slice(0, first.start) + replacement + text.slice(last.end);
+    existing = findBlocks(text, history);
+  } else {
+    const orderedPresent = history.filter((block) => presentIds.has(block.id));
+    if (orderedPresent.length > 1 && orderedPresent.length === existing.length) {
+      for (let index = existing.length - 1; index >= 0; index--) {
+        const slot = existing[index]!;
+        const block = orderedPresent[index]!;
+        text = text.slice(0, slot.start) + block.content + text.slice(slot.end);
+      }
+      existing = findBlocks(text, history);
+    }
+  }
+
+  for (let index = 0; index < history.length; index++) {
+    const block = history[index]!;
+    if (!eligibleIds.has(block.id) || presentIds.has(block.id) || ambiguousIds.has(block.id)) continue;
+    const next = history.slice(index + 1).find((candidate) => presentIds.has(candidate.id));
+    const nextSpan = next && existing.find((candidate) => candidate.id === next.id);
+    const at = nextSpan?.start ?? text.length;
+    const prefix = at > 0 && !text.slice(0, at).endsWith("\n\n") ? "\n\n" : "";
+    const suffix = at < text.length && !text.slice(at).startsWith("\n\n") ? "\n\n" : "";
+    const insertion = `${prefix}${block.content}${suffix}`;
+    text = text.slice(0, at) + insertion + text.slice(at);
+    const delta = insertion.length;
+    existing = existing.map((candidate) => candidate.start >= at
+      ? { ...candidate, start: candidate.start + delta, end: candidate.end + delta }
+      : candidate);
+    existing.push({ ...block, start: at + prefix.length, end: at + prefix.length + block.content.length });
+    existing.sort((a, b) => a.start - b.start);
+    presentIds.add(block.id);
+    addedIds.push(block.id);
+  }
+
+  if (text !== original) await writeFile(file, text, "utf8");
+  return { addedIds, presentIds: [...presentIds] };
 }
 
 function safe(value: string): string { return (value.replace(/[^A-Za-z0-9._-]/g, "_") || "artifact").slice(0, 120); }

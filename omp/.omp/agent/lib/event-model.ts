@@ -43,13 +43,17 @@ export function textOf(message: Message): string {
     .join("");
 }
 
-export function injected(message: Message): boolean {
-  return message.synthetic === true || message.attribution === "agent";
+
+export function normalizeCustomMessage(source: string, entry: RecordValue): MdLogEvent[] {
+  if (entry.type !== "custom_message" || entry.customType !== "skill-prompt" || entry.attribution !== "user") return [];
+  const details = typeof entry.details === "object" && entry.details !== null ? entry.details as RecordValue : {};
+  if (typeof details.name !== "string" || typeof details.args !== "string") return [];
+  return [{ id: eventId("skill", source, 0), kind: "skill", name: details.name, text: details.args }];
 }
 
 export function normalizeMessage(source: string, message: Message): MdLogEvent[] {
   if (message.role === "user") {
-    if (injected(message)) return [];
+    if (message.synthetic === true || message.attribution === "agent") return [];
     const text = textOf(message).trim();
     if (!text || (text.startsWith("/") && !text.startsWith("/skill:"))) return [];
     if (text.startsWith("/skill:")) {
@@ -190,7 +194,7 @@ function resultText(event: ToolResultEvent): string {
 }
 
 function quizBridgeAnswer(event: ToolResultEvent): MdLogEvent[] {
-  const text = resultText(event).trim();
+  const text = resultText(event).trim().replace(/\r?\n(?=Explanation:)/, "\n\n");
   if (!text) return [];
   if (event.isError) {
     return [{ id: "", kind: "answer", text: `Quiz unavailable: ${text}`, verdict: "abstract" }];

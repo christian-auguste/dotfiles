@@ -2,14 +2,14 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@oh-my-pi/pi-coding-agent";
 import type { AutocompleteItem } from "@oh-my-pi/pi-tui";
-import { normalizeMessage, normalizeToolCall, normalizeToolExecutionUpdate, normalizeToolResult, type MdLogEvent } from "../lib/event-model";
-import { appendLogBlock, ensureMarkdownFile, fileExists, findFrontMatterTarget, MARKER_KEY, readMarker, readText, upsertFrontMatter, writeArtifact } from "../lib/log-file";
+import { normalizeCustomMessage, normalizeMessage, normalizeToolCall, normalizeToolExecutionUpdate, normalizeToolResult, type MdLogEvent } from "../lib/event-model";
+import { ensureMarkdownFile, fileExists, findFrontMatterTarget, MARKER_KEY, readMarker, readText, reconcileLogBlocks, upsertFrontMatter, writeArtifact, type ReconcileLogResult } from "../lib/log-file";
 import { readConfig, writeConfig } from "../lib/md-log-config";
 import { renderCallout } from "../lib/log-renderer";
 import { canonicalize, discoverVaultRoot, resolveBoundPath } from "../lib/path-guard";
-import { emptyState, MD_LOG_STATE_TYPE, pushSeen, reconstructState, serializeState, type MdLogState } from "../lib/session-state";
+import { emptyState, MD_LOG_STATE_TYPE, pushSeen, reconstructState, SEEN_IDS_CAP, serializeState, type MdLogState } from "../lib/session-state";
 
-type Entry = { type: string; id: string; message?: unknown; customType?: string; data?: unknown };
+type Entry = { type: string; id: string; message?: unknown; customType?: string; attribution?: string; details?: unknown; data?: unknown };
 
 export default function registerMdLog(pi: ExtensionAPI): void {
   let state: MdLogState | null = null;
@@ -60,7 +60,7 @@ export default function registerMdLog(pi: ExtensionAPI): void {
 
   async function append(ctx: ExtensionContext, event: MdLogEvent, generation = bindingGeneration): Promise<void> {
     const boundPath = state?.boundPath;
-    if (!boundPath || generation !== bindingGeneration || state?.seenIds.includes(event.id)) return;
+    if (!boundPath || generation !== bindingGeneration) return;
     // Real containment check: the old assertExactBoundPath(boundPath, boundPath)
     // compared a path with itself and never failed. Reuse the bind-time bouncer.
     if (vaultRoot && resolveBoundPath(vaultRoot, boundPath).error) return;
@@ -71,7 +71,16 @@ export default function registerMdLog(pi: ExtensionAPI): void {
         if (!embedPath) return;
         event = { ...event, embedPath };
       }
-      await appendLogBlock(boundPath, renderCallout(event));
+      const wasSeen = state?.seenIds.includes(event.id) ?? false;
+      const result = await reconcileLogBlocks(boundPath, [{ id: event.id, content: renderCallout(event) }], new Set([event.id]));
+      if (!result.presentIds.includes(event.id)) return;
+      if (generation !== bindingGeneration || state?.boundPath !== boundPath) return;
+      state.seenIds = pushSeen(state.seenIds, event.id);
+      if (!wasSeen) {
+        appendErrorNotified = false;
+        state.cursor++;
+        persist();
+      }
     } catch (error) {
       if (generation !== bindingGeneration || state?.boundPath !== boundPath) return;
       if (!isPermissionError(error)) throw error;
@@ -83,9 +92,6 @@ export default function registerMdLog(pi: ExtensionAPI): void {
     }
     if (generation !== bindingGeneration || state?.boundPath !== boundPath) return;
     appendErrorNotified = false;
-    state.seenIds = pushSeen(state.seenIds, event.id);
-    state.cursor++;
-    persist();
   }
 
   const schedule = (ctx: ExtensionContext, event: MdLogEvent): Promise<void> => {
@@ -94,18 +100,64 @@ export default function registerMdLog(pi: ExtensionAPI): void {
   };
 
   async function backfill(ctx: ExtensionContext): Promise<number> {
-    if (!state?.boundPath) return 0;
+    const currentState = state;
+    if (!currentState?.boundPath) return 0;
+    const boundPath = currentState.boundPath;
+    if (vaultRoot && resolveBoundPath(vaultRoot, boundPath).error) return 0;
     const generation = bindingGeneration;
-    const existing = await readText(state.boundPath);
-    if (state.cursor === 0 && existing?.includes("> [!")) return 0;
-    let count = 0;
-    for (const entry of branch(ctx)) {
-      if (entry.type !== "message" || !entry.message) continue;
-      for (const event of normalizeMessage("entry:" + entry.id, entry.message as never)) {
-        if (!state.seenIds.includes(event.id)) { await append(ctx, event, generation); count++; }
+    const existing = await readText(boundPath);
+    const branchHistory = branch(ctx);
+    let resetBoundary = -1;
+    for (let index = 0; index < branchHistory.length; index++) {
+      if (branchHistory[index]!.type === "reset_boundary") resetBoundary = index;
+    }
+    const history = branchHistory.slice(resetBoundary + 1);
+    // /clear keeps durable history; only the suffix after its last boundary is live.
+    const skipHistory = resetBoundary < 0 && currentState.cursor === 0 && existing?.includes("> [!");
+    const allEvents: MdLogEvent[] = [];
+    for (const entry of history) {
+      if (entry.type === "message" && entry.message) {
+        allEvents.push(...normalizeMessage("entry:" + entry.id, entry.message as never));
+      } else if (entry.type === "custom_message") {
+        allEvents.push(...normalizeCustomMessage("entry:" + entry.id, entry as never));
       }
     }
-    return count;
+    const latestSkillPrompt = history
+      .filter((entry) => entry.type === "custom_message" && entry.customType === "skill-prompt" && entry.attribution === "user")
+      .at(-1);
+    const skillEventIds = new Set(
+      latestSkillPrompt
+        ? normalizeCustomMessage("entry:" + latestSkillPrompt.id, latestSkillPrompt as never).map((event) => event.id)
+        : [],
+    );
+    const eligibleIds = new Set(allEvents
+      .filter((event) => !skipHistory || skillEventIds.has(event.id))
+      .map((event) => event.id));
+    let result: ReconcileLogResult;
+    try {
+      result = await reconcileLogBlocks(
+        boundPath,
+        allEvents.map((event) => ({ id: event.id, content: renderCallout(event) })),
+        eligibleIds,
+      );
+    } catch (error) {
+      if (!isPermissionError(error)) throw error;
+      if (!appendErrorNotified) {
+        appendErrorNotified = true;
+        ctx.ui.notify(permissionMessage(boundPath), "error");
+      }
+      return 0;
+    }
+    if (generation !== bindingGeneration || state !== currentState) return 0;
+    appendErrorNotified = false;
+    const seen = new Set(currentState.seenIds);
+    for (const id of result.presentIds) seen.add(id);
+    for (const id of result.addedIds) {
+      if (!currentState.seenIds.includes(id)) currentState.cursor++;
+    }
+    currentState.seenIds = [...seen].slice(-SEEN_IDS_CAP);
+    persist();
+    return result.addedIds.length;
   }
 
   async function showStatus(ctx: ExtensionContext): Promise<void> {
@@ -151,8 +203,16 @@ export default function registerMdLog(pi: ExtensionAPI): void {
   }
 
   pi.on("session_start", async (_event, ctx) => { await restore(ctx); await backfill(ctx); });
-  pi.on("session_switch", async (_event, ctx) => { await restore(ctx); await backfill(ctx); });
+  pi.on("session_switch", async (event, ctx) => {
+    await restore(ctx);
+    if (event.reason !== "new") await backfill(ctx);
+  });
   pi.on("session_branch", async (_event, ctx) => { await restore(ctx); await backfill(ctx); });
+  pi.on("agent_start", async (_event, ctx) => {
+    const entry = branch(ctx).at(-1);
+    if (entry?.type !== "custom_message") return;
+    for (const item of normalizeCustomMessage("entry:" + entry.id, entry as never)) await schedule(ctx, item);
+  });
   pi.on("message_end", async (event, ctx) => {
     const message = event.message;
     if (message.role === "user" || message.role === "assistant") {
