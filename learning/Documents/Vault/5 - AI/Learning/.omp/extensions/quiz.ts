@@ -280,20 +280,22 @@ function buildResult(
 	const correctStr = correctIndices.map((i) => formatOptionRef(options, i)).join(", ");
 	const displayedOptions: DisplayedOption[] = options.map((o, i) => ({ index: i + 1, label: o.label }));
 
-	let text: string;
+	const lines = [`Question: ${question}`, ""];
 	if (dontKnow) {
 		// Make the signal explicit for the agent: the user did NOT guess, so this
 		// is a genuine knowledge gap, not a wrong answer to correct against.
-		text = `User selected "I don't know" — they did not attempt an answer (a genuine knowledge gap, not a wrong guess).`;
-		text += `\nCorrect: ${correctStr}`;
-		if (note) text += `\nUser's note: ${note}`;
+		lines.push(
+			`User selected "I don't know" — they did not attempt an answer (a genuine knowledge gap, not a wrong guess).`,
+			`Correct: ${correctStr}`,
+		);
 	} else {
 		const verdict = correct ? "correctly" : "incorrectly";
 		const selectedStr = answers.map((a) => `${a.index}. ${a.label}`).join(", ");
-		text = `User answered ${verdict}.\nSelected: ${selectedStr}\nCorrect: ${correctStr}`;
-		if (note) text += `\nUser's note: ${note}`;
+		lines.push(`User answered ${verdict}.`, `Selected: ${selectedStr}`, `Correct: ${correctStr}`);
 	}
-	if (explanation) text += `\nExplanation: ${explanation}`;
+	if (note) lines.push("", `User's note: ${note}`);
+	if (explanation) lines.push("", `Explanation: ${explanation}`);
+	const text = lines.join("\n");
 
 	return {
 		content: [{ type: "text" as const, text }],
@@ -373,6 +375,7 @@ function renderFeedback(
 		addWrapped(lines, theme.fg("muted", `Correct answer: ${correctStr}`), width, " ");
 	}
 	if (note) {
+		lines.push("");
 		addWrapped(lines, theme.fg("muted", `Your note: ${note}`), width, " ");
 	}
 	if (explanation) {
@@ -990,9 +993,11 @@ export default function quiz(pi: ExtensionAPI) {
 				return new Text(theme.fg("warning", details.message || "quiz unavailable"), 0, 0);
 			}
 
+			const lines: string[] = [];
+
 			const correctSet = new Set(details.correctIndices);
 			const selectedSet = new Set(details.answers.map((a) => a.index));
-			const lines: string[] = [];
+			lines.push(theme.fg("text", details.question), "");
 
 			// Full option list in the true (shuffled) display order, with ✓/✗ marks.
 			// Falls back to just the selected answers for older results that predate
@@ -1036,11 +1041,11 @@ export default function quiz(pi: ExtensionAPI) {
 			lines.push(verdict);
 
 			if (details.note) {
-				lines.push(theme.fg("muted", `Note: ${details.note}`));
+				lines.push("", theme.fg("muted", `Note: ${details.note}`));
 			}
 
 			if (details.explanation) {
-				lines.push(theme.fg("muted", details.explanation));
+				lines.push("", theme.fg("muted", details.explanation));
 			}
 
 			return new Text(lines.join("\n"), 0, 0);
