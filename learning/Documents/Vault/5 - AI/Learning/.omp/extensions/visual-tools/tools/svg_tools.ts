@@ -1,12 +1,12 @@
+import { randomUUID } from "node:crypto"
+import { rasterizeSvg } from "@oh-my-pi/pi-natives"
 import type { CustomTool, CustomToolAPI } from "@oh-my-pi/pi-coding-agent"
 import {
   applyEdit,
   existsSync,
   join,
-  mkdirSync,
   publish,
   readFileSync,
-  run,
   type Session,
   snippetAround,
   writeBody,
@@ -15,22 +15,14 @@ import {
 
 const GROUP = "svg"
 const BODY_FILE = "diagram.svg"
-const RENDER_TIMEOUT_MS = 60_000
+const MAX_RENDER_EDGE_PX = 4096
 
 type RenderDetails = { ok: boolean; path: string; filename?: string }
 
-let session: Session | null = null
-
-async function renderSvg(svgPath: string, outPath: string, workDir: string) {
-  const rsvg = await run("rsvg-convert", ["-z", "2", svgPath, "-o", outPath], { cwd: workDir, timeoutMs: RENDER_TIMEOUT_MS })
-  if (rsvg.code === 0 && existsSync(outPath)) return { ok: true as const, res: rsvg }
-  const magick = await run("magick", ["-density", "192", "-background", "white", svgPath, outPath], { cwd: workDir, timeoutMs: RENDER_TIMEOUT_MS })
-  if (magick.code === 0 && existsSync(outPath)) return { ok: true as const, res: magick }
-  return { ok: false as const, res: rsvg.code !== null ? rsvg : magick }
-}
-
 export default function svgTools(api: CustomToolAPI): CustomTool[] {
   const z = api.zod
+  let session: Session | null = null
+  const instanceId = randomUUID()
   return [
     {
       name: "write_svg",
@@ -45,7 +37,7 @@ export default function svgTools(api: CustomToolAPI): CustomTool[] {
         const source = params.source.trim()
         if (!source) throw new Error("`write_svg` requires a non-empty `source`.")
         if (!source.includes("<svg")) throw new Error("`write_svg`: source must be a complete <svg>…</svg> document.")
-        session = writeBody(GROUP, BODY_FILE, source)
+        session = writeBody(GROUP, BODY_FILE, source, instanceId)
         const lines = source.split("\n").length
         return {
           content: [{ type: "text", text: `Wrote ${lines}-line SVG source.\nCall render_svg to render it, or edit_svg to tweak it.` }],
@@ -86,18 +78,19 @@ export default function svgTools(api: CustomToolAPI): CustomTool[] {
         const params = rawParams as { save_as?: string }
         if (!session || !existsSync(session.bodyPath)) throw new Error("render_svg: no source yet — call write_svg first.")
         const { workDir, bodyPath } = session
-        mkdirSync(workDir, { recursive: true })
         const outPath = join(workDir, `render-${Date.now()}.png`)
-        const { ok, res } = await renderSvg(bodyPath, outPath, workDir)
-        if (!ok) {
-          const detail = (res.stderr || res.stdout || "unknown error").split("\n").slice(-30).join("\n")
-          const note = res.timedOut ? "SVG render timed out.\n\n" : ""
+        let png: Uint8Array
+        try {
+          png = await rasterizeSvg(readFileSync(bodyPath), MAX_RENDER_EDGE_PX, MAX_RENDER_EDGE_PX, 2)
+          writeFileSync(outPath, png)
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error)
           return {
-            content: [{ type: "text", text: `${note}SVG render FAILED — no image produced (tried rsvg-convert then magick). Fix the source with edit_svg and call render_svg again.\n\nError:\n${detail}` }],
+            content: [{ type: "text", text: `SVG render FAILED — no image produced. Fix the source with edit_svg and call render_svg again.\n\nError:\n${detail}` }],
             details: { ok: false, path: "" } satisfies RenderDetails,
           }
         }
-        const data = readFileSync(outPath).toString("base64")
+        const data = Buffer.from(png).toString("base64")
         if (params.save_as) {
           const published = publish(outPath, params.save_as, api.cwd)
           return {

@@ -63,12 +63,12 @@ export interface Session {
   bodyPath: string
 }
 
-export function sessionDir(group: string): string {
-  return join(STAGING_ROOT, `${group}-${process.pid}`)
+export function sessionDir(group: string, instanceId: string): string {
+  return join(STAGING_ROOT, `${group}-${process.pid}-${instanceId}`)
 }
 
-export function writeBody(group: string, bodyFileName: string, source: string): Session {
-  const workDir = sessionDir(group)
+export function writeBody(group: string, bodyFileName: string, source: string, instanceId: string): Session {
+  const workDir = sessionDir(group, instanceId)
   mkdirSync(workDir, { recursive: true })
   const bodyPath = join(workDir, bodyFileName)
   writeFileSync(bodyPath, source, "utf8")

@@ -40,13 +40,27 @@ Keep the idea intact but trust the maker to compose; if your brief lists more th
 
 ## Invoke
 
-Dispatch the maker with the `task` tool:
+Dispatch the maker with OMP's `task` tool. Batch calls need shared `context` and each task needs a `solutionSpace`:
 
+```ts
+task({
+  context: "Create one visual for the current lesson from the brief.",
+  tasks: [{
+    agent: "mermaid-maker",
+    task: "<your minimal, concrete brief>",
+    solutionSpace: "Preserve the stated relationships; choose a sparse layout and verify the rendered PNG."
+  }]
+})
 ```
-task(tasks=[{agent: "mermaid-maker", task: "<your minimal, concrete brief>"}])
-```
-```
-task(tasks=[{agent: "svg-maker", task: "<your minimal, concrete brief>"}])
+```ts
+task({
+  context: "Create one visual for the current lesson from the brief.",
+  tasks: [{
+    agent: "svg-maker",
+    task: "<your minimal, concrete brief>",
+    solutionSpace: "Preserve the stated geometry; choose a clear coordinate layout and verify the rendered PNG."
+  }]
+})
 ```
 
 The maker owns its own purpose-built tools (`write_*`/`edit_*`/`render_*`) — it authors the source, renders it to a PNG, **looks at the PNG and iterates until it is correct and clean**, publishes it into the vault with a unique filename, and returns:

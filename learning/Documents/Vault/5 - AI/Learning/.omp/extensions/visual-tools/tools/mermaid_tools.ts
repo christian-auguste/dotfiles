@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import type { CustomTool, CustomToolAPI } from "@oh-my-pi/pi-coding-agent"
 import { fileURLToPath } from "node:url"
 import {
@@ -24,10 +25,10 @@ const RENDER_TIMEOUT_MS = 120_000
 
 type RenderDetails = { ok: boolean; path: string; filename?: string }
 
-let session: Session | null = null
-
 export default function mermaidTools(api: CustomToolAPI): CustomTool[] {
   const z = api.zod
+  let session: Session | null = null
+  const instanceId = randomUUID()
   return [
     {
       name: "write_mermaid",
@@ -40,7 +41,7 @@ export default function mermaidTools(api: CustomToolAPI): CustomTool[] {
       async execute(_id, rawParams) {
         const params = rawParams as { source: string }
         const source = params.source.trim()
-        session = writeBody(GROUP, BODY_FILE, source)
+        session = writeBody(GROUP, BODY_FILE, source, instanceId)
         const lines = source.split("\n").length
         return {
           content: [{ type: "text", text: `Wrote ${lines}-line Mermaid source.\nCall render_mermaid to render it, or edit_mermaid to tweak it.` }],
