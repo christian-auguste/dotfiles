@@ -139,6 +139,57 @@ function harness() {
       },
     });
   };
+  const completedBridgeQuiz = (question: string, note: string) => {
+    const toolCallId = `q${runId}-${++serial}`;
+    fired.push({
+      type: "message",
+      id: `m${runId}-${serial}`,
+      message: {
+        role: "assistant",
+        content: [{
+          type: "toolCall",
+          name: "write",
+          toolCallId,
+          arguments: {
+            path: "xd://quiz",
+            content: JSON.stringify({
+              question,
+              options: [{ label: "10 committees" }, { label: "20 committees" }],
+            }),
+          },
+        }],
+      },
+    });
+    fired.push({
+      type: "message",
+      id: `m${runId}-${++serial}`,
+      message: {
+        role: "toolResult",
+        toolName: "write",
+        toolCallId,
+        details: {
+          xdev: {
+            tool: "quiz",
+            args: { question, options: [{ label: "10 committees" }, { label: "20 committees" }] },
+            inner: {
+              status: "answered",
+              question,
+              options: [{ index: 1, label: "10 committees" }, { index: 2, label: "20 committees" }],
+              answers: [],
+              correctIndices: [1],
+              correct: false,
+              dontKnow: true,
+              note,
+              explanation: "A committee is unordered.",
+            },
+          },
+        },
+        content: [{ type: "text", text: `Question: ${question}\n\nUser selected I don't know\n\nUser's note: ${note}\n\nExplanation: A committee is unordered.` }],
+        isError: false,
+      },
+    });
+  };
+
   const resetBoundary = () => {
     fired.push({ type: "reset_boundary", id: `r${runId}-${++serial}` });
   };
@@ -146,7 +197,47 @@ function harness() {
   // to drain enqueued appends deterministically instead of guessing a delay.
   const drain = async () => { await handlers["session_shutdown"]!(); };
   const setStored = (data: string | null) => { stored = data; };
-  return { handlers, notifies, handler, commandDef, ctx, userMessage, skillPrompt, quizResult, cancelledQuiz, resetBoundary, drain, setStored };
+  return { handlers, notifies, handler, commandDef, ctx, userMessage, skillPrompt, quizResult, cancelledQuiz, completedBridgeQuiz, resetBoundary, drain, setStored };
+}
+
+// Backfill reconstructs an answer and its note from persisted xdev details.
+{
+  const h = harness();
+  const backfillNote = path.join(vault, "notes", "quiz-note-backfill.md");
+  const question = "How many distinct committees can be formed?";
+  const noteText = "I think this is n choose r, but I am unsure.";
+  h.completedBridgeQuiz(question, noteText);
+  writeFileSync(backfillNote, [
+    "---",
+    "Date: 2026-10-11",
+    `omp-md-log: test-log-id`,
+    "---",
+    "",
+    "> [!question] Question",
+    `> ${question}`,
+    ">",
+    "> 1. 10 committees",
+    "> 2. 20 committees",
+  ].join("\n"));
+  h.setStored(JSON.stringify({
+    version: 1,
+    boundPath: backfillNote,
+    cursor: 25,
+    seenIds: [],
+    sessionId: "test-session",
+    logId: "test-log-id",
+    vaultRoot: realpathSync(vault),
+  }));
+  await h.handlers["session_switch"]!({ reason: "new" }, h.ctx(vault));
+  await h.handler(JSON.stringify(backfillNote), h.ctx(vault));
+  let content = readFileSync(backfillNote, "utf8");
+  assert.equal(content.split(question).length - 1, 1);
+  assert.match(content, /> \[!question\] Quiz — I don't know\n> Your answer: I don't know\n> Correct answer: 1\. 10 committees\n> \n> Note: I think this is n choose r, but I am unsure\.\n> \n> Explanation:\n> A committee is unordered\./);
+  await h.handler(JSON.stringify(backfillNote), h.ctx(vault));
+  content = readFileSync(backfillNote, "utf8");
+  assert.equal(content.split(question).length - 1, 1);
+  assert.equal(content.split("Note: I think this is n choose r").length - 1, 1);
+
 }
 
 // A bind after /learn recovers the complete user prompt, not injected skill text.

@@ -27,6 +27,17 @@ function quizBridgeInput(input: unknown): RecordValue | null {
   }
 }
 
+function bridgeQuizResult(details: unknown): { args?: RecordValue; result: RecordValue } | null {
+  if (typeof details !== "object" || details === null || !("xdev" in details)) return null;
+  const xdev = details.xdev;
+  if (typeof xdev !== "object" || xdev === null || !("tool" in xdev) || xdev.tool !== "quiz") return null;
+  if (!("inner" in xdev) || typeof xdev.inner !== "object" || xdev.inner === null) return null;
+  const args = "args" in xdev && typeof xdev.args === "object" && xdev.args !== null
+    ? xdev.args as RecordValue
+    : undefined;
+  return { args, result: xdev.inner as RecordValue };
+}
+
 export function textOf(message: Message): string {
   if (typeof message.content === "string") return message.content;
   if (!Array.isArray(message.content)) return "";
@@ -167,7 +178,7 @@ function quizAnswer(details: RecordValue): MdLogEvent {
   const correct = numberedAnswers(details.options, details.correctIndices);
   const lines = [`Your answer: ${selected.join(", ")}`];
   if (correct.length) lines.push(`Correct answer: ${correct.join(", ")}`);
-  if (typeof details.note === "string" && details.note.trim()) lines.push(`Note: ${details.note.trim()}`);
+  if (typeof details.note === "string" && details.note.trim()) lines.push("", `Note: ${details.note.trim()}`);
   if (typeof details.explanation === "string" && details.explanation.trim()) lines.push("", `Explanation:`, details.explanation.trim());
   return {
     id: "",
@@ -193,8 +204,14 @@ function resultText(event: ToolResultEvent): string {
     .join("");
 }
 
-function quizBridgeAnswer(event: ToolResultEvent): MdLogEvent[] {
-  const text = resultText(event).trim().replace(/\r?\n(?=Explanation:)/, "\n\n");
+function quizBridgeAnswer(event: ToolResultEvent, question?: string): MdLogEvent[] {
+  let text = resultText(event).trim();
+  const questionPrefix = question ? `Question: ${question}\n\n` : "";
+  if (questionPrefix && text.startsWith(questionPrefix)) text = text.slice(questionPrefix.length);
+  text = text
+    .replace(/\r?\n(?=User's note:)/, "\n\n")
+    .replace(/\r?\n(?=Explanation:)/, "\n\n")
+    .replace(/(^|\n)User's note:/, "$1Note:");
   if (!text) return [];
   if (event.isError) {
     return [{ id: "", kind: "answer", text: `Quiz unavailable: ${text}`, verdict: "abstract" }];
@@ -245,10 +262,24 @@ function askAnswer(details: RecordValue): MdLogEvent[] {
 }
 
 export function normalizeToolResult(event: ToolResultEvent): MdLogEvent[] {
-  const bridgeQuiz = event.toolName === "write" ? quizBridgeInput(event.input) : null;
-  if (bridgeQuiz) {
-    const question = questions("quiz", bridgeQuiz, event.toolCallId);
-    return [...question, ...quizBridgeAnswer(event)];
+  const bridge = event.toolName === "write" ? bridgeQuizResult(event.details) : null;
+  const bridgeInput = event.toolName === "write" ? quizBridgeInput(event.input) : null;
+  if (bridgeInput || bridge) {
+    const questionArgs = bridgeInput ?? bridge?.args;
+    const question = bridge && questionArgs
+      ? { ...questionArgs, options: bridge.result.options ?? questionArgs.options }
+      : questionArgs;
+    const questionEvents = bridgeInput && question ? questions("quiz", question, event.toolCallId) : [];
+    if (bridge && (bridge.result.status === "answered" || bridge.result.status === "cancelled")) {
+      return [
+        ...questionEvents,
+        { ...quizAnswer(bridge.result), id: eventId("answer", event.toolCallId, 0) },
+      ];
+    }
+    const questionText = typeof questionArgs?.question === "string" ? questionArgs.question : undefined;
+    const bridgeAnswers = quizBridgeAnswer(event, questionText)
+      .map((item, index) => ({ ...item, id: eventId("answer", event.toolCallId, index) }));
+    return [...questionEvents, ...bridgeAnswers];
   }
   const details = event.details as RecordValue | undefined;
   const question = event.toolName === "quiz" ? quizQuestion({ toolCallId: event.toolCallId, args: event.input, result: { details } }) : [];
