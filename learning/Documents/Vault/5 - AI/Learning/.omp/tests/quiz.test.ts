@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "bun:test";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
-import quiz from "./quiz";
+import quiz from "../extensions/quiz";
 
 type Theme = { fg: (_color: string, text: string) => string };
 type QuizTool = {
