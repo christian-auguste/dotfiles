@@ -12,7 +12,7 @@
     "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": false,
     "paths": {
-      "@oh-my-pi/pi-tui": ["/tmp/oh-my-pi-work/oh-my-pi/packages/tui/src/index.ts"],
+      "@oh-my-pi/pi-tui": ["../.omp/agent/node_modules/@oh-my-pi/pi-tui"],
       "@oh-my-pi/pi-natives": ["/tmp/oh-my-pi-work/oh-my-pi/packages/natives/native/index.d.ts"],
       "@oh-my-pi/pi-utils": ["/tmp/oh-my-pi-work/oh-my-pi/packages/utils/src/index.ts"],
       "@oh-my-pi/pi-coding-agent/src/modes/components/overlay-box": ["/tmp/oh-my-pi-work/oh-my-pi/packages/coding-agent/src/modes/components/overlay-box.ts"],
