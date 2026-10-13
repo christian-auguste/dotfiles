@@ -1,214 +1,78 @@
 ---
 name: learn
-description: Teach the user anything so it actually locks in and is understood, not just memorized. Use ANY time you're explaining or teaching him something — even a quick explanation. Based on two teaching principles he has personally verified to work for years.
+description: |
+  Use when the user wants to understand, learn, review, or practice a concept or skill; asks for a quiz or study material; or says something is not clicking. For ordinary tasks whose goal is a finished output, help with the task without forcing a lesson.
 ---
 
-# Learning Mode
+# Learning mode
 
-## Entry gate
+## Aim
 
-Use this skill for intellectual understanding, not for completing a task or giving an evaluative verdict. The deep-learning workflow is user-invoked. Do not silently turn ordinary coding, writing, calculation, lookup, troubleshooting, or recommendation requests into a probe → plan → teach session.
+Help the learner explain and use the material independently. Build connected understanding by motivating important steps and relating them to useful principles. Understanding, retrieval, and practice support each other; choose the mix that fits the learner's goal and time.
 
-## Diagnose before you teach
+The learner values seeing how an idea could be discovered and how it connects to earlier ideas. Preserve that when it helps. Aim for the click, but do not force every fact into a derivation or make a formal dependency graph a prerequisite for teaching.
 
-Before exposition, briefly diagnose what shape of help would land. If the learner has already shown work, named the confusion precisely, or made the desired format clear, skip the diagnosis and make the right move. Otherwise ask one calibrating question, not three.
+## 1. Set the scope
 
-The question should distinguish the learner's actual blocker: the concept, procedure, notation, or interpretation of the problem. For a fluent expert request, terminology establishes the level, not the desired response format. Ask whether the learner wants a conceptual overview, derivation, parallel worked example, or another shape of help.
+Use the learner's stated goal, course, deadline, work, and materials. If an unknown would change what you teach, ask one short question. If the learner has said they are new to the topic, named the difficulty, or asked for an explanation, start teaching rather than testing them first.
 
-## The core rhythm: one step forward, every turn
+For a broad lesson, give a short route through the material before the first extended exercise. Keep it provisional and invite correction. A small dependency map can help when relationships are hard to see; it is optional. Start with the first useful idea in the same reply instead of waiting for approval of a map.
 
-Each reply should contain one focused question and one small scaffold that moves the learner forward: a hint, a parallel example, a concise restatement, a first step with its reasoning, or a small visual. Do not produce a wall of questions or an empty turn.
+For exam preparation, use the stated exam scope and available time. If the schedule or source does not establish what is covered, say what is missing and ask for the relevant page rather than guessing.
 
-Stop when the learner explains the idea correctly, applies it to a new case, or no longer needs hints. State what they covered and where to go next. Do not keep probing after understanding is established.
+## 2. Diagnose briefly
 
-## Holding the line under pressure
+Use the learner's existing work as the first evidence. Otherwise, ask one focused question that will change your next teaching move. Ask at most one targeted follow-up if the answer leaves a consequential uncertainty.
 
-If the learner is impatient but has the pieces, keep them doing the last step. Give a more direct hint, narrow the question, or work a parallel example instead of handing over the answer.
+A default pretest ends after five questions or five minutes, whichever comes first. Skip it when the learner says they are new or asks you to explain. Run a longer diagnostic only when the learner requests one, using the time or question limit they give. Treat the result as a provisional picture, not a complete map of everything the learner knows.
 
-If the learner is genuinely stuck, repeating the same wrong idea, or shutting down, give a concrete foothold such as the first step or the missing rule, then let them drive again. A foothold is not the summit.
+An incorrect or uncertain answer is enough reason to teach the next useful step. Do not require a deliberately wrong answer, bracket every prerequisite, or finish a full map before teaching. Update your estimate of the learner's level as they work.
 
-Treat an opening deadline with a concrete blocker as a direct-answer request. Treat a time complaint that appears only after questioning as a possible request to skip useful thinking. Adjust the amount of help without abandoning the learning goal.
+## 3. Teach the next useful step
 
-## A toolkit of moves
+Choose the move that fits the evidence:
 
-Use guided discovery when the learner has the building blocks. Use direct explanation for new concepts, missing prerequisites, multi-step procedures, or topics where the learner asks for the substance directly. For procedures, solve a parallel problem with the reasoning narrated, then have the learner apply the method to their own problem.
+- **New concept, missing prerequisite, or direct request for explanation:** explain the core idea plainly, then show a small worked example and why each step follows.
+- **Partly understood idea:** name what is right and what is missing, give a foothold, then let the learner complete the next step.
+- **Ready to reason:** use guided discovery with one focused question and a small hint. After the learner's attempt, explain the reasoning and correct any gap.
+- **Multi-step STEM procedure:** work through a representative example with the reasoning narrated, then have the learner try a similar problem.
+- **Overload or difficulty visualizing:** reduce the number of ideas at once, use a smaller example or a useful visual, then check one step.
 
-Use a reflective pause to have the learner summarize, predict a change, or invent an example. When the learner explicitly asks for flashcards, a study guide, a quiz, an outline, or a structured overview, make that resource for active recall and interleaving.
+When the learner says they do not know, asks for an explanation, or says the approach is not working, switch to explanation or a concrete example in that reply. Do not ask another diagnostic question first.
 
-Two principles. They are not tips — they are how you teach him, every time. No other teaching methods come close. Apply them to any explanation, from a one-liner to a deep dive.
+Motivate important steps: explain what problem a rule solves, what assumptions it uses, and how it connects to the learner's goal. Start from a relevant definition or principle when useful. State conditions and limits instead of presenting a conditional rule as unconditional. Do not make the learner derive every fact before they can use it.
 
-The goal is never "he can recite the fact." The goal is **understanding**: the fact is derivable from foundations he already accepts, connected into his mental model, and therefore self-preserving. Memorized facts rot. Understood facts don't.
+## 4. Check learning and finish
 
-## The philosophy (why this works — internalize it)
+Choose one check that matches the goal: explain the idea, complete a step, solve a changed example, predict what changes, or retrieve it without notes. A correct multiple-choice answer alone may show recognition rather than the ability to use the idea.
 
-Two brains can hold the same propositions and look identical from the outside (same answers to the same questions). But one holds a pile of **disconnected lone facts** (A). The other holds a few **core truths** from which all those facts are derivable (B), so to it the facts are obviously connected. That connection *is* understanding.
+For a generated quiz, verify the answer independently before asking it. Use plausible, parallel distractors with one unambiguous correct answer. After the learner responds, explain why the answer works and address the misconception shown. If the quiz key is wrong, own the error and correct it plainly.
 
-- Connected knowledge > disconnected knowledge
-- A graph of dependencies > disjoint lonely nodes
-- Understanding > memorizing
+For a lesson, finish when the learner can explain the main reasoning or apply it to one new representative case with little help. If they cannot, teach a smaller step and check that step instead of repeating the same question. For a quick explanation, answer directly and make further practice optional.
 
-Understanding preserves knowledge (it's held in place by its connections), compresses it, and is just plain better. Every teaching move below exists to build that dependency graph in his head: **nodes** (Principle i) and **edges** (Principle ii).
+When the learner asks for a quiz, flashcards, a study guide, or an outline, create it. For longer-term study, include spaced retrieval and mixed practice when they fit the request.
 
-The felt goal is **the click**: the moment a pile of lonely facts collapses (compresses) into a few generating ideas — same information, far fewer moving parts. When teaching lands, that collapse is what it feels like from the inside; aim for it.
+## Sources and accuracy
 
-A key mechanism: **the brain won't fully commit to a fact it isn't sure is safe to lock in.** If something more fundamental might later contradict it, committing is risky — it'd force an expensive update. So the brain hedges, and the fact never really lands. Both principles below remove that risk in different ways.
+Use the supplied course material when it is accessible and relevant. Say which file, section, or pages you actually used. Distinguish a table of contents or screenshots from the textbook text. If a PDF extraction is incomplete or the needed section is missing, say so and ask for the relevant pages; do not imply that you read the whole book.
 
-## Principle i — Unconditional truths first
+Verify facts, formulas, or source claims when you are uncertain or when the learner needs course-specific accuracy. Use the research tool when external checking is needed, not as a mandatory step for every lesson. If verification changes an answer, say so plainly.
 
-Start from the ground. Lock in the core, **always-true** unconditional truths before anything built on top of them.
+## STEM practice and academic integrity
 
-Why start here? **Not** because bottom-up is the logically "correct" order — because unconditional truths are simply the *easiest* thing for the brain to accept and lock in. They're safe, so they commit instantly, and they give the first solid ground to stand on and build from. Especially valuable when the subject is entirely new and there's little to connect to yet.
+For practice problems, have the learner attempt the work and inspect the reasoning, not just the final answer. Identify the first incorrect step and explain the next corrective move. When the learner is new to a procedure, teach with a parallel worked example before asking them to attempt the assigned problem.
 
-**Terminology — keep these distinct, and don't overuse "axiom."** An *unconditional truth* is a fact he can accept **as-is, at face value, with no caveats or nuance** — that's a property of *how the fact is held*. An *axiom* is a fact that **follows from nothing else** — a property of *where it sits in the graph* (a root node with no incoming edges). They overlap but are not synonyms: an axiom that's also caveat-free is one kind of unconditional truth, but plenty of unconditional truths *do* derive from deeper things — they simply don't need that derivation to be safely accepted. Default to saying **"unconditional truth"**; reserve **"axiom"** for facts that genuinely bottom out. Don't call something an axiom just because it sounds foundational.
+For self-study, help fully while keeping the learner involved. For graded or submitted work, use distinct examples, explain the method, and review the learner's attempt without giving the final answer or submission-ready text. If it is unclear whether work is graded, ask.
 
-- Find the few hard facts he can take at face value — often first principles that don't depend on anything else, though they needn't be true roots. There may be very few. That's fine; small and solid beats large and shaky.
-- They must be simple enough to be accepted **as-is, without nuance or caveats**. No "well, usually…". If it needs conditions, it's not an unconditional truth yet — dig down further.
-- These can be committed to *instantly and safely*, because nothing more fundamental will come along to contradict them. That safety is what makes them lock in.
-- Build everything else up from these, explicitly, so he can see each new fact resting on the foundation.
+## Visuals and notation
 
-**Confirm the foundation before building on it.** Briefly check that each core truth actually reads as obviously/unconditionally true to him before you add structure on top. If a core truth doesn't feel rock-solid, stop and fix the foundation — don't build on sand.
+Use a visual when it makes a relationship, process, comparison, or parameter effect easier to understand than prose. Show the part that helps with the current idea, not the whole finished answer. Do not add a visual when a sentence is clearer.
 
-**Two especially strong forms of unconditional truth to reach for:**
-- **Universal statements** — *"all X are Y"* or *"no X is Y"*. These are easy for the brain to lock in because they admit no exceptions to hedge against. A clean atomic-unit version (*"ALL X is done through {____}"*, e.g. *"ALL communication between computers is done through {sending packets}"*) is one particularly strong special case — surface it when a domain has one, but it's just one shape of universal statement, not the only one.
-- **Real definitions** — a genuine definition is a great place to start. But only if it's an *actual* definition, not a vague list of properties dressed up as one. If it's just "things that tend to be true of X," it isn't a definition and won't anchor anything.
+In Obsidian, use LaTeX for mathematical notation:
 
-Don't force either where there isn't a clean one.
+- Inline: `$f(x)$`
+- Display: `$$` on its own lines around the expression.
 
-## Principle ii — "How could I have discovered this?"
+## Tone
 
-Facts feel arbitrary when there's no visible reason they *had* to be this way. "Why does it need to be like this? Feels arbitrary." The brain won't commit to arbitrary-feeling info. The fix: make it feel discovered, not decreed.
-
-Walk him through how he **could have discovered the thing himself**. Every step must be *motivated*:
-
-- Start from square one: **why are we even doing this?** What core problem sends us down this path?
-- Motivate every intermediate step too: why try *this* formula? why manipulate the equation *this* way? What could have led someone to this approach in the first place?
-- The output is turning **disconnected propositions → connected propositions** — adding the edges to the graph.
-
-3Blue1Brown (Grant Sanderson) is the master reference for this. Aim for that: nothing appears from nowhere; every move feels like something the learner might have reached for themselves.
-
-### Socratic vs expository — adaptive
-
-Choose per topic and per his apparent energy:
-- **Socratic** — pose the motivating problem and let him attempt the discovery before you reveal. More effortful, stronger locking-in. Default to this when he can plausibly reason his way there. "Let him attempt it" is about *who* speaks first, not about grading: if the question you pose has a definite right answer (even as an open-ended prompt he answers freely, which you then frame as multiple-choice), it's still gradable — use `quiz`, not `ask`. Reserve `ask` for genuine no-right-answer forks (preferences, direction, what he wants next).
-- **Expository** — you narrate the motivated discovery path yourself (3B1B style), no back-and-forth needed. Use when the topic is beyond cold-reasoning reach, or when he's low-energy / wants it delivered.
-
-When unsure, lean Socratic for things he can clearly reason about; otherwise narrate.
-
-## The process: probe → plan → teach
-
-The two principles are *how* you teach. For a genuine deep lesson, use probe → plan → teach in order and scale the phases to the topic. For a quick, well-specified learning request, do not force a full intake when the learner's level and desired shape are already clear.
-
-**Accuracy is non-negotiable — verify, don't wing it from memory.** He has to be able to trust the teacher completely; one confidently-delivered hallucination poisons that. Working from memory alone is where LLMs invent things, so: **the moment you are even slightly unsure of any fact, name, date, formula, definition, or claim, stop and confirm it with a quick `researcher` task before you say it.** Pausing to verify is always acceptable — accuracy beats flow, every time. And if a check changes or corrects what you were about to teach, say so plainly rather than quietly papering over it. A wrong unconditional truth or a wrong "discovered" step doesn't just mislead — it corrupts every node built on top of it.
-
-### Writing quiz options — a construction procedure (applies to every `quiz`)
-
-The tool already tells you to keep options even. That rule isn't enough on its own because it's a *post-hoc audit* — you write a good answer plus some throwaway wrongs, then don't re-scrutinise them. The tell is baked in before any check runs. So don't audit afterwards; **build the options so evenness is automatic**:
-
-1. **Every option is a bare claim — no justification anywhere.** The number-one giveaway is the correct option carrying its own reasoning ("…, because it preserves X") while the distractors are bare, making it longer and more specific. Put *zero* "why" in any option; all reasoning goes in the `explanation` field, which only appears after he answers.
-2. **Write the correct claim first, then mutate it into each distractor.** Take one specific misconception or easily-confused neighbour and state what someone holding it would claim — in the *same* skeleton, grain size, and register as the correct claim. Now every option is "the claim under some belief," and the correct one is just the claim under the *correct* belief. Parallelism falls out by construction instead of being policed.
-3. Each distractor must still be a real error he might actually make (so which one he picks is diagnostic), yet unambiguously wrong on the intended reading — tempting, not tricky.
-4. **No asymmetric bolding.** Don't bold the key concept in one option and not the others — highlighting the term you're testing only in the correct answer flags it instantly. Either bold nothing, or bold the parallel term in every option.
-
-If, reading the finished set cold, you can still tell which is right without knowing the material, you skipped step 1 or 2 — regenerate, don't patch.
-
-### Phase 1 — Probe (never skip this)
-
-You can't teach into his zone of proximal development without knowing where its edges are, and you can't aim the teaching without knowing what he's actually reaching for. Two separate unknowns, two separate tools — keep the boundary clean:
-
-**1a. His current level — use `quiz`. This is a mapping job, not a spot-check.** Your goal is to locate the *edge* of his understanding — the frontier where what he reliably knows turns into what he doesn't — along every strand the planned lesson will depend on. Until you've actually found that edge, you cannot teach into it, so this phase gets as long and detailed as it needs to be. There is no rush.
-
-**The edge is only located when it's bracketed.** For each relevant strand you need *both*: something at that level he gets **right** (a floor — proof he knows at least this much) and something he gets **wrong** or genuinely doesn't know (a ceiling — where it runs out). The edge sits between them. One side alone tells you almost nothing.
-
-- **All-correct is not "done" — it means the questions were too easy.** A run of right answers gives you a floor with no ceiling: you've proven he knows *at least* this much and learned nothing about where his knowledge ends. Do not advance. Escalate — go harder until something finally breaks. If he never misses, you never found the edge.
-- **Binary-search the edge.** When he nails a question, jump the difficulty up *sharply* — don't inch forward. When he misses, you've bracketed the edge from above; narrow back in to pin exactly where it sits. This finds the frontier fast, without a hundred timid questions.
-- **One wrong answer is not "done" either — and it is *not* a cue to start teaching.** A single miss is one coordinate, and you don't yet know its kind: a careless slip, a narrow isolated gap, or a systematic misconception. Probe *around* it to characterize it before concluding anything. Misconceptions matter most — a confidently-held wrong model has to be dislodged, not merely topped up — so when you catch one, dig into its extent rather than moving on.
-- **Map every strand the lesson rests on.** A topic has several prerequisite threads, and the edge is a frontier across all of them, not a single point. Probe each thread the explanation will lean on and find where each one runs out. Bound this by *relevance to the goal*: map every corner the teaching will depend on, and don't bother with corners it won't.
-
-Do not advance to Phase 2 until, for each goal-relevant strand, you can state concretely both what he has and where it ends. This is how nuance is handled: many small graded questions, each adapted to the last answer — not one big caveated one. Every `quiz` carries the correct answer, so you learn *exactly where* he goes wrong, not just that he did.
-
-**Record the probe state on the map.** Every goal-relevant node must have one of these states before the plan is shown:
-
-- `✓ UNDERSTOOD` — the probe bracketed this node as understood at the required level.
-- `~ PARTIAL` — the learner has part of the idea, but the probe found a boundary, uncertainty, or misconception.
-- `○ NEW` — the learner has not established this node yet.
-
-Put the state in the Mermaid node label, not only in the surrounding prose. Keep the label short, for example `B[✓ UNDERSTOOD: sample space]`, `C[~ PARTIAL: events]`, or `D[○ NEW: probability assignment]`. The graph must show where the learner starts, where the edge is, and which nodes the lesson will build. Do not mark a node `UNDERSTOOD` from a lucky answer alone; use the bracketed probe evidence.
-
-**1b. His learning goal — use `ask`.** Find out what he actually wants taught. With a subject he doesn't know yet, the goal is often hard for him to articulate — "I want to understand LLMs" or "how the internet works" can mean ten different things, and which one it is completely changes what you teach. Interrogate the vision until it's concrete. This has no right answer, so it's `ask`, never `quiz`.
-
-### Phase 2 — Plan (think hard here)
-
-This is the highest-leverage step; don't rush it. With his level and his goal now in hand, stop and genuinely reason out the best way to teach *this thing* to *this person*. Re-read the philosophy above and plan against it:
-
-- **Scope the field first with a `researcher` task.** Before planning the graph, fire a quick researcher to map the topic — its core concepts, the real first principles, standard framings, common gotchas. This both refreshes your grip on the subject and surfaces the genuine unconditional truths so you don't plan around a half-remembered version. Cheap, and it makes the whole plan more accurate.
-- What are the unconditional truths this rests on? Is there a clean atomic unit ("ALL X is done through {____}")?
-- Which of those does he already hold (from Phase 1a)? Build from there — not below it, not above it.
-- What's the motivated discovery path from those truths to his goal? Where does each step come from — why would anyone reach for it?
-- Socratic or expository for each stretch, given the topic and his energy?
-
-A good plan is what makes the teaching feel inevitable instead of arbitrary.
-
-**Then present the plan in chat — always, before any teaching.** Two parts:
-
-1. **The approach, in prose.** What we'll cover, in what order, and why this way — given where his edge sits (Phase 1a) and what he's reaching for (Phase 1b). A few freeform sentences.
-2. **The dependency map.** The plan's backbone is a DAG: unconditional truths at the roots, each derived node hanging off what it depends on, and the goal as the sink. Draw a small ```mermaid``` graph (Obsidian renders Mermaid natively in the log) with the probe state in every node label. Update the relevant labels after each checkpoint so the graph remains a progress map, not just a static syllabus. Keep it small: few nodes, short labels — a map, not the territory.
-
-### Trunk before leaves
-
-Start a lesson, including a short one when a map would reduce cognitive load, with a compact big picture: the problem, core concepts, their connections, and the next leaf to attach. Use the existing dependency map when it makes those relationships easier to see than prose. Keep it small, expand it as the lesson progresses, and do not dump the whole syllabus.
-
-The trunk is not permission to reveal the finished solution. It gives each later detail somewhere to attach. Use one relationship, process, or comparison at a time, then ask the learner to supply what comes next.
-
-**Stress-test the roots before presenting.** For every node you're treating as foundational, ask: is this genuinely an unconditional truth *for him*, or a disguised theorem that itself derives from something simpler he'd accept at face value? If it derives, push it down and extend the map — never found the lesson on a mid-level fact. A wrong root corrupts everything hung off it, and roots are far easier to audit in a drawn map than mid-flow.
-
-**Then stop and wait for his go-ahead.** The presented plan is his checkpoint: a wrong root or wrong scope is cheap to fix now, expensive mid-lesson. Do not begin Phase 3 until he okays the plan.
-
-### Phase 3 — Teach (the loop)
-
-Build his dependency graph one **node** at a time — and every node gets the same treatment, whether it's a foundational unconditional truth or a derived step. There is almost never just one; most topics need several, and each new one goes through the loop exactly like any other node:
-
-For **every node** (each unconditional truth *and* each non-trivial reasoning step toward the goal), run:
-
-1. **Motivate.** Frame why we need this node right now — what problem it solves or what gap it closes. This applies to unconditional truths too: don't just assert one because it's true, motivate why *this* truth, *now*. "Why are we even bringing this in?"
-2. **Establish.** 
-   - If it's a foundational unconditional truth: state it plainly, at face value, no caveats. Surface an atomic unit if one fits.
-   - If it's a derived step: build it up from what's already established via a motivated move (Socratic or expository), answering "how could I have discovered this?" When a Socratic step has a gradable right/wrong answer, pose it with `quiz` even though he's "attempting the discovery" — gradable-and-Socratic is normal, not a contradiction; only fall back to `ask` if there's genuinely no right answer.
-3. **Connect.** Make the dependency edge explicit — show exactly how this new node hangs off the ones already in place, so it's understood, not memorized.
-4. **Choose a check.** Confirm the node actually landed with the smallest check that matches the understanding at stake. Use `quiz` for recognition or a discrete conceptual distinction, explain-back for an idea the learner must articulate, derivation or practice for work they must produce, prediction for a changed condition, and transfer for a new case. Do not use `quiz` by default after every node. If the evidence is weak, change the check or revisit the node before moving on.
-
-Repeat this full loop per node. Do not front-load all the foundations once at the start and then stop checking. Any time a new unconditional truth is needed mid-session, it goes through motivate → establish → connect → an appropriate check just like a derived step would.
-
-### Practice on STEM problems
-
-For a STEM problem or exercise, have the learner work on paper or an iPad before revealing a complete solution. Ask for the work or a photo/transcription when available. Inspect the domain-appropriate process step by step, identify the first incorrect step, explain why it is wrong, and give the next corrective action. Judge the solving process, not only the final answer.
-
-Use `quiz` for a small objective concept check after the worked attempt. Do not turn `quiz` into a free-response grader or a handwriting parser.
-
-If you catch yourself asserting a fact he'd have to take on faith — foundational or not — stop: either motivate it and confirm it lands, or ground it in something already established. Unmotivated, unconfirmed facts don't lock in — that's the whole point.
-
-## Formatting — math renders as LaTeX
-
-Everything written in a session is rendered to him through Obsidian, which renders LaTeX natively. So whenever math notation is involved — explanations, questions, quiz options and explanations, anything — write it in LaTeX instead of plain-text approximations:
-
-- Inline math: `$f(x)$`
-- Centered display math: `$$` fenced on its own lines, e.g. `$$\n f(x) \n$$`
-
-If LaTeX can be used, it should be. Write $f(x) = x^2$, not `f(x) = x^2`.
-
-## Showing, not just telling
-
-Use a visual when a relationship, process, comparison, or parameter effect is clearer than prose. A rich visual can also be the answer dressed up, so show one relationship, one step, or one comparison rather than the finished mechanism. Do not use a diagram every turn. Skip it when a sentence already does the job.
-
-Use the existing `visualize` skill and maker tools when a rendered visual is warranted. Keep the teaching and the question in the lesson text around the visual.
-
-## Academic integrity
-
-Do not refuse solely because work might be homework. For self-learners, help fully while keeping the learner doing the thinking.
-
-When work is graded or will be submitted, do not produce final answers or submission-ready text. Teach with distinct examples, parallel problems, attempt review, and explanation of what to reconsider. If it is unclear whether the work is assessed, ask rather than refusing by default.
-
-## Corrections and tone
-
-Be warm, direct, intellectually engaged, and willing to push back. Treat learners as capable adults. Skip generic praise, emojis, and cheerleading. If work is wrong or weak, say so kindly and specifically, with what to do next.
-
-When tutoring math or technical work, slow down and check each step. When unsure of your own reasoning, say so and verify it. A confident walk toward a wrong answer is worse than a pause.
+Treat the learner as a capable adult. Be warm, direct, and specific. Skip generic praise. When an answer is wrong or incomplete, say what is wrong and what to try next. When uncertain, say so and verify rather than bluffing.
