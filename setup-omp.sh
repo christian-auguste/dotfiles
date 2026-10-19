@@ -15,7 +15,7 @@ step() { printf '\n%s==>%s %s\n' "$C$B" "$X" "$*"; }
 ok()   { printf '  %s✓%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '  %s!%s %s\n' "$Y" "$X" "$*" >&2; }
 
-command -v omp >/dev/null 2>&1 || { warn "omp not on PATH — install it first (brew install can1357/tap/omp)"; exit 1; }
+command -v omp >/dev/null 2>&1 || { warn "omp not on PATH — install it first (curl -fsSL https://omp.sh/install | bash)"; exit 1; }
 command -v bun >/dev/null 2>&1 || warn "bun not on PATH — 'omp install' will fail without it"
 
 # Pin config to where a login shell reads it.
