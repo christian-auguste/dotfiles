@@ -111,22 +111,25 @@ installer non-interactively.
 
 Open tmux and press `` ` `` then `I` to install plugins.
 
-Configure OMP separately. Launch it once so its setup wizard can write
-`config.yml`, then run:
+Configure OMP separately on each machine. Log in and launch it once so OMP
+creates `config.yml`, then run the setup script:
 
 ```sh
 omp
 ~/dotfiles/setup-omp.sh
 ```
+The script applies your portable model, appearance, behavior, and plugin
+settings. Provider login remains local to each machine. The script leaves
+machine-specific paths and extension enablement unchanged.
 
 The `pi` command and OMP's `omp` command can coexist. Pi's tracked configuration
 is `pi/.pi/` and is applied only when selected. Launch `pi` once after
 installation so it can install the packages in
 `~/.pi/agent/settings.json`.
 
-`setup-omp.sh` is idempotent. It sets only settings that differ from OMP's
-defaults, installs the Kiro provider plugin, and never deletes keys. Unset
-settings use OMP's current defaults.
+`setup-omp.sh` applies the portable settings from your current OMP config. It
+does not copy authentication, UI state, machine-specific paths, or extension
+choices. It updates the listed settings in the existing config file.
 
 ### Wizard development
 
@@ -233,7 +236,7 @@ zplugin-update
 - Zoxide replaces `cd` via `--cmd cd` flag — smart matching with full `cd /exact/path` still working
 - Employer-specific agent config (`~/.kiro/steering/`) is intentionally untracked — it documents internal build and deployment systems that don't belong in a personal repo, and wouldn't apply elsewhere. The pi steering extension no-ops when the directory is absent.
 - `~/.pi/agent/npm/package.json` is derived from `settings.json` by pi and is not tracked; `packages` in `settings.json` is the source of truth
-- **`~/.omp/agent/config.yml` is deliberately not stowed.** omp rewrites it atomically (temp file + rename), and a rename replaces a symlink with a real file — the dotfiles copy would silently go stale on the first write. omp also persists its own UI toggles there, so the file is genuinely dynamic. `setup-omp.sh` applies the handful of settings worth reproducing instead. `AGENTS.md` *is* stowed: omp reads but never rewrites it.
+- **`~/.omp/agent/config.yml` is deliberately not stowed.** OMP rewrites it atomically and stores machine-local UI state there. `setup-omp.sh` applies selected portable settings without replacing the file. `AGENTS.md` is stowed because OMP reads but never rewrites it.
 - **`models.yml` cannot fix kiro's missing thinking ladder.** omp applies `modelOverrides` only to models its own registry produces (bundled catalog plus runtime discovery). Kiro models are registered by the plugin through `pi.registerProvider(...)`, a path the override merge never revisits — verified by overriding `name`, `contextWindow` and `thinking` on `kiro/claude-opus-5` and observing all three ignored, while the same overrides applied cleanly to `amazon-bedrock/anthropic.claude-opus-5`. The fix belongs in the provider plugin, which must publish `thinking` instead of the pi-era `thinkingLevelMap`.
 
 ## Keybindings

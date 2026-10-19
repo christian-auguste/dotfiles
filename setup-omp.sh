@@ -32,45 +32,29 @@ set_cfg() {  # set_cfg <key> <value>
   fi
 }
 
-step "Safety"
-# pi-os-sandbox replaces the destructive-guard extension; bash children route
-# through its env-scrubbing wrapper via shellPath.
-sandbox_src="$HOME/dotfiles/omp/pi-os-sandbox"
-sandbox_ext="$HOME/.omp/agent/extensions/pi-os-sandbox.ts"
-sandbox_wrapper="$sandbox_src/bin/sandbox-bash"
-if [ ! -f "$sandbox_src/package.json" ]; then
-  warn "pi-os-sandbox missing at $sandbox_src — safety swap skipped"
-else
-  # Swap the legacy guard for the new adapter, then route bash through the seam.
-  if [ -e "$HOME/.omp/agent/extensions/destructive-guard.ts" ]; then
-    rm -f "$HOME/.omp/agent/extensions/destructive-guard.ts"
-    ok "removed legacy destructive-guard extension"
-  else
-    ok "legacy destructive-guard already removed"
-  fi
-  if [ ! -L "$sandbox_ext" ] || [ "$(readlink "$sandbox_ext")" != "$sandbox_src/extensions/omp.ts" ]; then
-    ln -sfn "$sandbox_src/extensions/omp.ts" "$sandbox_ext"
-    ok "linked pi-os-sandbox extension"
-  else
-    ok "pi-os-sandbox extension already linked"
-  fi
-  set_cfg shellPath "$sandbox_wrapper"
-  cat <<'EOF'
-  pi-os-sandbox is active: command policy + host path protection + env
-  scrubbing at the child boundary. To add OMP's second eval defense without
-  replacing other per-tool policies, run once:
-    omp config set tools.approval '{"eval":"prompt"}'
-EOF
-fi
-
 step "Models"
-# No numbered roles or Ctrl+P cycling; Shift+Tab cycles thinking level instead.
+set_cfg modelRoles '{"default":"openai-codex/gpt-6-luna:high"}'
 set_cfg cycleOrder '[]'
 
+step "Behavior"
+set_cfg hideThinkingBlock true
+set_cfg vault.enabled true
+set_cfg tools.approval '{"eval":"allow"}'
+set_cfg composer.shape rule
+set_cfg statusLine.separator powerline
+set_cfg statusLine.preset default
+set_cfg statusLine.compactThinkingLevel false
+set_cfg memory.backend mnemopi
+set_cfg mnemopi.autoRecall false
+set_cfg display.hideToolActivity false
+set_cfg extendedContext false
+set_cfg compaction.methodOrder '["snapcompact","remote","handoff","shake","soft"]'
+set_cfg dev.autoqaConsent denied
+
 step "Appearance"
-# theme.dark is not set here: titanium is already omp's default.
 set_cfg theme.light light-gruvbox
 set_cfg symbolPreset nerd     # needs a nerd font in the terminal
+
 
 step "Plugins"
 # Entries are `<marker>|<spec>`; the marker matches the dependency *source* in
@@ -98,7 +82,6 @@ cat <<'EOF'
   2. `cd ~/dotfiles && stow omp` -- carries AGENTS.md, which omp reads but never
      rewrites. config.yml is excluded on purpose: omp rewrites it atomically and
      a rename would replace the symlink with a real file.
-  3. Pick a session model with Alt+P. Alt+M writes modelRoles into config.yml.
 EOF
 
 printf '\n%s✓ Done.%s Verify with: omp config list | head -40\n' "$G$B" "$X"
