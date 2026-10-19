@@ -42,72 +42,113 @@ Clone this repository with SSH after you add and test your key:
 git clone git@github.com:christian-auguste/dotfiles.git ~/dotfiles
 ```
 
-### macOS
+### macOS and Ubuntu
 
-Run the installer. It installs Homebrew if needed, installs the [Brewfile](./Brewfile) packages, installs Pi, stows the dotfiles, wires the shared zsh files, and installs TPM.
-
-```sh
-~/dotfiles/install.sh
-```
-
-The Pi Ollama local-search package installs by default on macOS to preserve the existing setup.
-
-### Ubuntu
-
-On Ubuntu, the installer uses APT for system tools (`stow`, `zoxide`, `fzf`, `fd-find`, `eza`, `bat`, `ripgrep`, `tmux`, `cloc`, `nodejs`, `npm`, `git-lfs`, `pipx`, `ruby`, `graphviz`, `unison`, `ruff`, and `rust-analyzer`), plus `xclip` and `wl-clipboard`. It installs Starship through its official Linux installer, and OMP and Herdr through their official Linux installers. Interactive prompts default to yes for Visual Studio Code, Ghostty, and FiraMono Nerd Font, and no for Pi local search. In non-interactive runs those same defaults apply without prompting. Set `INSTALL_PI_OLLAMA=1` to enable local search without the prompt. The installer also sets zsh as your login shell, stows the dotfiles, wires the shared zsh files, and installs TPM. If it changes your login shell, log out of Ubuntu and back in so terminal apps inherit the change.
+Run the installer in a terminal:
 
 ```sh
 ~/dotfiles/install.sh
 ```
 
-By default, Ubuntu selects Visual Studio Code, Ghostty, and FiraMono Nerd Font; Pi local search is opt-in. To install Pi local search with Ollama, set:
+The wizard offers two editable starting profiles. **Personal** selects the full
+personal setup, including desktop apps, fonts, and Ollama. **Server** selects
+shell and command-line tools, with desktop apps and local AI turned off. macOS
+defaults to Personal; Ubuntu defaults to Server. Both offer every supported
+package. The profile only sets the initial selections.
 
-```sh
-INSTALL_PI_OLLAMA=1 ~/dotfiles/install.sh
-```
+Each profile keeps its own software, config, and login-shell draft during the
+run. Switch profiles from the final review to customize either draft or
+restore your earlier edits. A new run starts from the original defaults.
+Unchecking software or a config skips it; it does not uninstall or unlink
+anything already on the machine. Node remains selected for the wizard.
 
-This installs Ollama and `nomic-embed-text`, and stows the separate `pi-ollama` package. The `pi` command installs through Bun if missing.
+| Key | Action |
+| --- | --- |
+| `↑` / `↓` | Move between options |
+| `←` / `→` | Collapse or expand a package group |
+| `Space` | Toggle an item, a group, or Select all |
+| `Tab` or `Enter` | Accept choices and advance |
+| `Shift+Tab` | Go back without discarding edits |
+| `Ctrl+C` | Cancel |
 
-The installer uses Microsoft's signed APT repository for VS Code. Ghostty uses Ubuntu's official APT package on 26.04; on 24.04 it offers the [community-built `.deb` installer](https://ghostty.org/docs/install/binary#debian-and-ubuntu), which runs only after explicit consent (default no) and is not an official Ubuntu package. FiraMono Nerd Font v3.5.1 installs under `~/.local/share/fonts`. The installer uses mise to install Node 22 and the TypeScript and VS Code language servers, pipx for basedpyright, and upstream installers for Starship, Bun, OMP, Herdr, and Ollama when Pi local search is selected.
+The header shows the five stages and highlights the current step. Framed
+prompts show the focused option, selection markers, and package group counts.
+Controls sit directly below each prompt. Unavailable packages and configs
+are disabled. The final review shows installation routes, download
+sources, permission requirements, Stow targets, backups, and shell changes.
+Edit any section directly or switch profiles before approving.
 
-The installer deliberately skips `tlrc` because no Ubuntu route is configured. If you decline Ghostty's community installer, or mise/Node 22 or Bun is unavailable, it reports the affected package as skipped.
+On the review screen, `Tab` moves between actions and never installs.
+`Page Up` / `Page Down` scroll the plan; `Home` / `End` jump to its ends.
+Select **Install** and press `Enter` to approve. There is no second general
+confirmation in Bash. Security questions about Homebrew tap trust or
+community-built Ghostty packages still require separate consent.
+
+Cancelling skips the selected installation actions. An approved Node or
+Homebrew bootstrap performed before the wizard remains installed.
+
+On Ubuntu, APT installs selected system packages and the installer uses the
+existing upstream routes for Starship, mise, Bun, OMP, Herdr, Ollama, and
+language tools. Ghostty on Ubuntu 24.04 uses a community-built `.deb` and
+requires a separate confirmation. On macOS, Homebrew installs only selected
+Brewfile entries. The wizard reuses Node 20.12 or later with npm when present.
+Otherwise it asks before bootstrapping Homebrew's Node on macOS or mise's
+Node 22 on Ubuntu. The temporary wizard installation and npm cache are
+removed when the installer exits; approved bootstrap installations remain.
+
+Installing packages can use `sudo` and affect all accounts on the machine.
+Stow links, shell startup edits, and a login-shell change affect the account
+running the installer. The installer backs up conflicting files before
+linking dotfiles. It does not configure the machine's services. For a shared
+login, shell history and the account's configs are shared too; use separate
+accounts when users need isolation.
+
+For scripts and remote automation, the wizard is skipped when stdin or stdout
+is not a terminal. macOS then uses the Personal defaults; Ubuntu uses Server.
+Override the profile with `INSTALL_PROFILE=personal` or
+`INSTALL_PROFILE=server`. Review the default selections before running the
+installer non-interactively.
 
 Open tmux and press `` ` `` then `I` to install plugins.
 
-Configure omp separately. It must be installed and launched once so its setup wizard can write `config.yml` before this script edits it:
+Configure OMP separately. Launch it once so its setup wizard can write
+`config.yml`, then run:
 
 ```sh
-omp                    # let the wizard run, then quit
+omp
 ~/dotfiles/setup-omp.sh
 ```
 
-The standalone `pi` command and OMP's `omp` command can coexist. Pi's tracked configuration is `pi/.pi/` and is applied by the normal Stow step. Launch `pi` once after installation so it can install the packages listed in `~/.pi/agent/settings.json`.
+The `pi` command and OMP's `omp` command can coexist. Pi's tracked configuration
+is `pi/.pi/` and is applied only when selected. Launch `pi` once after
+installation so it can install the packages in
+`~/.pi/agent/settings.json`.
 
-`setup-omp.sh` is idempotent. It sets only settings that differ from omp's defaults, installs the Kiro provider plugin, and never deletes keys. Any setting it does not mention resolves from omp's schema at read time.
+`setup-omp.sh` is idempotent. It sets only settings that differ from OMP's
+defaults, installs the Kiro provider plugin, and never deletes keys. Unset
+settings use OMP's current defaults.
 
-<details>
-<summary>Manual steps shared by both installers</summary>
+### Wizard development
+
+Edit `install-wizard/cli.ts`, then regenerate `install-wizard/cli.js`.
+Keep the compiled file in the repository so setup machines do not need
+TypeScript or development dependencies.
 
 ```sh
-# Create directories the zsh config expects
-mkdir -p ~/.local/state/zsh ~/.cache/zsh
-
-# macOS: include pi-ollama with the default packages
-cd ~/dotfiles && stow agents codex ghostty herdr omp pi pi-ollama starship tmux zsh
-
-# Ubuntu: omit optional pi-ollama unless selected
-cd ~/dotfiles && stow agents codex ghostty herdr omp pi starship tmux zsh
-# selected Ubuntu setup:
-cd ~/dotfiles && stow agents codex ghostty herdr omp pi pi-ollama starship tmux zsh
-
-# Wire the shared shell files (appends fenced blocks and backs up first)
-printf '\n# >>> christian dotfiles >>>\nexport XDG_CONFIG_HOME="${XDG_CONFIG_HOME:-$HOME/.config}"\n[ -f "$XDG_CONFIG_HOME/zsh/.zshenv" ] && source "$XDG_CONFIG_HOME/zsh/.zshenv"\n[ -f "$HOME/.zshenv.local" ] && source "$HOME/.zshenv.local"\n# <<< christian dotfiles <<<\n' >> ~/.zshenv
-printf '\n# >>> christian dotfiles >>>\n[ -f "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc" ] && source "${XDG_CONFIG_HOME:-$HOME/.config}/zsh/.zshrc"\n# <<< christian dotfiles <<<\n' >> ~/.zshrc
-
-# Install tmux plugin manager
-git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
+npm --prefix install-wizard ci
+npm --prefix install-wizard run build
+python3 install-wizard/test_wizard.py
 ```
-</details>
+
+The terminal checks exercise the compiled wizard and its read-only planner.
+They do not install system packages or change your account.
+
+To inspect installation actions without opening the wizard or applying them:
+
+```sh
+bash install.sh --review-plan ubuntu server 'node zsh starship tmux' 'zsh starship tmux' 1
+```
+
 
 
 ## Homebrew packages

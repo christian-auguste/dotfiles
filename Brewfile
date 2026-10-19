@@ -42,6 +42,7 @@ brew "vscode-langservers-extracted" # html, css, json, eslint servers
 
 # --- macOS GUI apps + fonts (skipped on Linux) ---
 if OS.mac?
+  cask "visual-studio-code"      # editor
   cask "ghostty@tip"              # terminal — configured in ghostty/
   cask "font-fira-mono-nerd-font" # font-family used by the ghostty config
   cask "alt-tab"                  # Windows-style alt-tab window switcher

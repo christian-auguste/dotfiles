@@ -1,0 +1,23 @@
+{
+  "name": "dotfiles-install-wizard",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "bin": {
+    "dotfiles-install-wizard": "./cli.js"
+  },
+  "engines": {
+    "node": ">=20.12.0"
+  },
+  "files": [
+    "cli.js"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.0",
+    "typescript": "5.9.3"
+  }
+}

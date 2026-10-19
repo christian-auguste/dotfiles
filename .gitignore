@@ -37,3 +37,6 @@ herdr/.config/herdr/release-notes.json
 
 # macOS Finder metadata
 .DS_Store
+
+# Local TypeScript build dependencies
+install-wizard/node_modules/
